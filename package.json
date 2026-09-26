@@ -1,0 +1,28 @@
+{
+  "name": "@modelforge/workspace",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@11.4.0",
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "scripts": {
+    "build": "pnpm -r --if-present build",
+    "test": "vitest run",
+    "trueforge:start": "npx -y @truefoundry/trueforge --port 8790",
+    "modelforge:bootstrap": "node --env-file-if-exists=.env scripts/bootstrap-trueforge.mjs",
+    "modelforge:run": "node --env-file-if-exists=.env --import tsx scripts/run-session.mjs",
+    "demo": "node --env-file-if-exists=.env --import tsx scripts/run-full-demo.mjs",
+    "demo:v2": "node --env-file-if-exists=.env --import tsx scripts/run-orchestrated-demo.mjs",
+    "demo:v2:auto": "node --env-file-if-exists=.env --import tsx scripts/run-orchestrated-demo.mjs --auto-approve"
+  },
+  "devDependencies": {
+    "@modelcontextprotocol/sdk": "^1.6.0",
+    "@types/node": "^22.13.0",
+    "tsx": "^4.23.15",
+    "typescript": "^5.7.3",
+    "vitest": "^3.0.5",
+    "zod": "^3.24.2"
+  }
+}

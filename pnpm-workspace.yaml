@@ -1,0 +1,6 @@
+packages:
+  - 'demo-apps/*'
+  - 'mcp-servers/*'
+  - 'apps/*'
+allowBuilds:
+  esbuild: true
