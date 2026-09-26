@@ -212,6 +212,53 @@ export class SourcePathNotFoundError extends ModelForgeError {
   }
 }
 
+// ─── Execution Lifecycle Errors (Part 6) ────────────────────────────────────
+
+export class SandboxStartupError extends ModelForgeError {
+  constructor(reason: string, exitCode?: number | null, stderr?: string) {
+    super(`Candidate execution startup failure: ${reason}`, {
+      category: 'sandbox',
+      code: 'EXECUTION_STARTUP_FAILURE',
+      context: { reason, exit_code: exitCode ?? null, stderr: stderr ?? null },
+    });
+    this.name = 'SandboxStartupError';
+  }
+}
+
+export class SandboxHealthcheckTimeoutError extends ModelForgeError {
+  constructor(port: number, timeoutMs: number, url: string) {
+    super(`Candidate execution healthcheck timed out after ${timeoutMs}ms on ${url}`, {
+      category: 'sandbox',
+      code: 'EXECUTION_HEALTHCHECK_TIMEOUT',
+      context: { port, timeout_ms: timeoutMs, url },
+    });
+    this.name = 'SandboxHealthcheckTimeoutError';
+  }
+}
+
+export class SandboxProcessCrashError extends ModelForgeError {
+  constructor(pid: number, exitCode: number | null, signal: string | null) {
+    super(`Candidate application process (pid ${pid}) crashed with code ${exitCode} signal ${signal}`, {
+      category: 'sandbox',
+      code: 'EXECUTION_PROCESS_CRASH',
+      context: { pid, exit_code: exitCode, signal },
+    });
+    this.name = 'SandboxProcessCrashError';
+  }
+}
+
+export class UnknownExecutionConfigError extends ModelForgeError {
+  constructor(targetDir: string, inspectedFiles: string[]) {
+    super(`Cannot detect runnable application configuration in ${targetDir}. No recognized entrypoint or startup script found.`, {
+      category: 'sandbox',
+      code: 'EXECUTION_CONFIG_UNKNOWN',
+      context: { target_dir: targetDir, inspected_files: inspectedFiles },
+    });
+    this.name = 'UnknownExecutionConfigError';
+  }
+}
+
+
 // ─── Patching Errors ─────────────────────────────────────────────────────────
 
 export class PatchPreconditionError extends ModelForgeError {

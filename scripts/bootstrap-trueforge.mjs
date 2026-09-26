@@ -35,15 +35,18 @@ async function upsertAgent() {
   const existing = await findAgentByName(client, AGENT_NAME);
   const manifest = buildAgentManifest();
 
+  const description =
+    'Autonomous AI model migration rehearsal agent with empirical differential verification and human approval gate.';
+
   if (!existing) {
     return client.request('POST', '/api/v1/agents', {
-      body: { name: AGENT_NAME, manifest },
+      body: { name: AGENT_NAME, description, manifest },
       expected: [200, 201],
     });
   }
 
   return client.request('PUT', `/api/v1/agents/${encodeURIComponent(existing.id)}`, {
-    body: { manifest },
+    body: { description, manifest },
     expected: [200],
   });
 }

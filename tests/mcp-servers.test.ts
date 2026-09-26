@@ -104,4 +104,67 @@ describe('MCP Servers & Privilege Boundaries', () => {
     expect(verified.receipt).toBeDefined();
     expect(verified.receipt?.outcome).toBe('completed');
   });
+
+  it('executes compare_rehearsals via MCP boundary and produces deterministic comparison matrix', async () => {
+    const machine = sessionRegistry.getOrCreate();
+
+    // Set up mock baseline evaluation
+    const baselineReport = {
+      contract_version: '2.0',
+      eval_run_id: 'eval-base-1',
+      session_id: machine.sessionId,
+      candidate_id: 'baseline-model',
+      timestamp: new Date().toISOString(),
+      test_suite_id: 'standard',
+      total_cases: 2,
+      passed_cases: 2,
+      case_results: [
+        { case_id: 'case-1', category: 'qa', passed: true, latency_ms: 100, estimated_cost: 0.001, failure_reason: null, raw_response_summary: 'ok' },
+        { case_id: 'case-2', category: 'tool', passed: true, latency_ms: 120, estimated_cost: 0.002, failure_reason: null, raw_response_summary: 'ok' },
+      ],
+      quality: { score: 1.0, threshold: 0.9, passed: true, by_category: {} },
+      latency: { p50_ms: 110, p95_ms: 120, p99_ms: 120, threshold_p95_ms: 500, passed: true },
+      cost: { estimated_cost_per_1k_req: 1.85, baseline_cost_per_1k_req: 1.85, savings_pct: 0, passed: true },
+      regressions: [],
+      overall: 'PASS',
+    };
+    machine.setBaselineEvaluation(baselineReport as any);
+
+    // Fast-forward to evaluation_complete with candidate
+    machine.transition('inspecting', 'test');
+    machine.transition('inspection_complete', 'test');
+    machine.setProfile({ contract_version: '2.0', status: 'complete' } as any);
+    machine.transition('planning', 'test');
+    machine.transition('plan_ready', 'test');
+    machine.setPlan({ contract_version: '2.0' } as any);
+    machine.transition('staging', 'test');
+    machine.transition('staged', 'test');
+    machine.transition('evaluating', 'test');
+    machine.transition('evaluation_complete', 'test');
+
+    const candidateReport = {
+      ...baselineReport,
+      eval_run_id: 'eval-cand-1',
+      candidate_id: 'candidate-model',
+      passed_cases: 1,
+      overall: 'FAIL',
+      quality: { score: 0.5, threshold: 0.9, passed: false, by_category: {} },
+      case_results: [
+        { case_id: 'case-1', category: 'qa', passed: true, latency_ms: 50, estimated_cost: 0.0001, failure_reason: null, raw_response_summary: 'ok' },
+        { case_id: 'case-2', category: 'tool', passed: false, latency_ms: 60, estimated_cost: 0.0001, failure_reason: 'Schema error', raw_response_summary: 'err' },
+      ],
+      cost: { estimated_cost_per_1k_req: 0.1, baseline_cost_per_1k_req: 1.85, savings_pct: 94, passed: true },
+    };
+    machine.addEvaluation(candidateReport as any);
+
+    const comparison = await handleRehearsalToolCall('compare_rehearsals', {
+      session_id: machine.sessionId,
+    });
+
+    expect(comparison.verdict).toBe('FAIL');
+    expect(comparison.regressions_count).toBe(1);
+    expect(comparison.recommendation).toBe('needs_remediation');
+    expect(comparison.cost_savings_pct).toBe(94);
+  });
 });
+

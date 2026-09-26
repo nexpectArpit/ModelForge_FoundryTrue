@@ -47,24 +47,40 @@ export class SessionRegistry {
     sourceModel?: string;
     targetModel?: string;
     maxRemediationRounds?: number;
+    forceNew?: boolean;
   }): MigrationStateMachine {
-    const targetId = (opts?.sessionId as string) || (this.activeSessionId as string);
+    const rawId = opts?.sessionId as string | undefined;
+    const cleaned = (rawId && rawId !== 'None' && rawId !== 'null' && rawId !== 'undefined' && rawId !== 'optional-migration-session-identifier') ? rawId : undefined;
+    let targetId = cleaned || (opts?.forceNew ? undefined : (this.activeSessionId as string));
 
-    if (targetId) {
+    if (!opts?.forceNew) {
+      if (!targetId || !this.store.getSession(targetId)) {
+        const latest = this.store.getAllSessions()[0];
+        if (latest) {
+          targetId = latest.session_id;
+        }
+      }
+    }
+
+    if (targetId && !opts?.forceNew) {
+      const isTerminal = (state: string) => ['completed', 'failed', 'aborted'].includes(state);
+
       // 1. Check if session exists in SQLite
       const durableRecord = this.store.getSession(targetId);
-      if (durableRecord) {
+      if (durableRecord && (cleaned || !isTerminal(durableRecord.state))) {
         if (this.inMemory.has(targetId)) {
           const machine = this.inMemory.get(targetId)!;
+          if (cleaned || !isTerminal(machine.state)) {
+            this.activeSessionId = machine.sessionId;
+            return machine;
+          }
+        } else {
+          // Rehydrate machine directly from SQLite
+          const machine = MigrationStateMachine.fromStore(this.store, targetId as SessionId);
+          this.inMemory.set(targetId, machine);
           this.activeSessionId = machine.sessionId;
           return machine;
         }
-
-        // Rehydrate machine directly from SQLite
-        const machine = MigrationStateMachine.fromStore(this.store, targetId as SessionId);
-        this.inMemory.set(targetId, machine);
-        this.activeSessionId = machine.sessionId;
-        return machine;
       }
     }
 

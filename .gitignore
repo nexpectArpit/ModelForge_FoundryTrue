@@ -16,5 +16,8 @@ node_modules/
 .test-eval-*
 dist/
 *.log
-.DS_Store
+.modelforge-approvals/
+.modelforge-canaries/
+**/*.sqlite*
+
 

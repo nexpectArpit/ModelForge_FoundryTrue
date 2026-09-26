@@ -24,6 +24,7 @@ import {
   type CanaryPlan,
   type AuditReceipt,
   type SessionId,
+  type RehearsalComparisonMatrix,
   VALID_TRANSITIONS,
   createSessionId,
   createStepId,
@@ -80,8 +81,10 @@ export class MigrationStateMachine {
       source_model: durableRecord.source_model,
       target_model: durableRecord.target_model,
       profile: durableRecord.profile_json ? JSON.parse(durableRecord.profile_json) : null,
+      baseline_evaluation: null,
       plan: durableRecord.plan_json ? JSON.parse(durableRecord.plan_json) : null,
       evaluations: evals,
+      latest_comparison: null,
       diagnoses: durableRecord.latest_diagnosis_json ? [JSON.parse(durableRecord.latest_diagnosis_json)] : [],
       canary: durableRecord.canary_json ? JSON.parse(durableRecord.canary_json) : null,
       events: transitions,
@@ -109,8 +112,10 @@ export class MigrationStateMachine {
       source_model: record.source_model,
       target_model: record.target_model,
       profile: record.profile_json ? JSON.parse(record.profile_json) : null,
+      baseline_evaluation: null,
       plan: record.plan_json ? JSON.parse(record.plan_json) : null,
       evaluations: evals,
+      latest_comparison: null,
       diagnoses: record.latest_diagnosis_json ? [JSON.parse(record.latest_diagnosis_json)] : [],
       canary: record.canary_json ? JSON.parse(record.canary_json) : null,
       events: transitions,
@@ -249,6 +254,15 @@ export class MigrationStateMachine {
     }
     this.store.savePlan(this.session.session_id, plan);
     this.session.plan = plan;
+  }
+
+  setBaselineEvaluation(report: EvaluationReport): void {
+    this.session.baseline_evaluation = report;
+    this.store.recordEvaluation(this.session.session_id, report);
+  }
+
+  setComparison(comparison: RehearsalComparisonMatrix): void {
+    this.session.latest_comparison = comparison;
   }
 
   addEvaluation(report: EvaluationReport): void {

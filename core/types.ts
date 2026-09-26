@@ -23,6 +23,7 @@ export type CanaryId = Brand<string, 'CanaryId'>;
 export type MigrationStepId = Brand<string, 'MigrationStepId'>;
 export type PatchId = Brand<string, 'PatchId'>;
 export type OperationId = Brand<string, 'OperationId'>;
+export type ComparisonId = Brand<string, 'ComparisonId'>;
 
 export function createSessionId(): SessionId {
   return `session-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}` as SessionId;
@@ -34,6 +35,10 @@ export function createEvalRunId(): EvalRunId {
 
 export function createCanaryId(): CanaryId {
   return `canary-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}` as CanaryId;
+}
+
+export function createComparisonId(): ComparisonId {
+  return `comp-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}` as ComparisonId;
 }
 
 export function createStepId(stepName: string): MigrationStepId {
@@ -342,6 +347,63 @@ export interface EvaluationReport {
   overall: 'PASS' | 'FAIL';
 }
 
+// ─── Rehearsal Comparison Matrix ─────────────────────────────────────────────
+
+/** Comparative status of a single benchmark test case between baseline and candidate */
+export type CaseComparisonStatus =
+  | 'maintained_pass' // Passed in both baseline and candidate
+  | 'maintained_fail' // Failed in both baseline and candidate
+  | 'regression'      // Passed in baseline, but failed in candidate
+  | 'improvement';    // Failed in baseline, but passed in candidate
+
+/** Detailed differential for a single benchmark test case */
+export interface CaseComparison {
+  case_id: string;
+  category: 'qa' | 'summarize' | 'extract' | 'tool';
+  baseline_passed: boolean;
+  candidate_passed: boolean;
+  status: CaseComparisonStatus;
+  baseline_latency_ms: number;
+  candidate_latency_ms: number;
+  latency_delta_ms: number;
+  failure_reason?: string | null;
+}
+
+/** Pure deterministic comparison matrix evaluating candidate against baseline */
+export interface RehearsalComparisonMatrix {
+  contract_version: '2.0';
+  comparison_id: ComparisonId;
+  session_id: SessionId;
+  baseline_eval_id: EvalRunId;
+  candidate_eval_id: EvalRunId;
+  baseline_model: string;
+  candidate_model: string;
+  timestamp: string;
+  total_cases: number;
+  baseline_passed: number;
+  candidate_passed: number;
+  /** Candidate quality score minus baseline quality score */
+  accuracy_delta: number;
+  /** Candidate latency p50 minus baseline latency p50 in ms */
+  latency_p50_shift_ms: number;
+  /** Candidate latency p95 minus baseline latency p95 in ms */
+  latency_p95_shift_ms: number;
+  /** Cost savings percentage compared to baseline */
+  cost_savings_pct: number;
+  /** Count of true regressions (cases baseline passed but candidate failed) */
+  regressions_count: number;
+  /** Count of improvements */
+  improvements_count: number;
+  /** Per-case comparison details */
+  case_comparisons: CaseComparison[];
+  /** Pure deterministic evaluation verdict */
+  verdict: 'PASS' | 'FAIL' | 'INCONCLUSIVE';
+  /** Recommended lifecycle action based strictly on evidence */
+  recommendation: 'ready_for_approval' | 'needs_remediation' | 'abort_migration';
+  /** Human-readable explanation of comparison findings */
+  summary: string;
+}
+
 // ─── Failure Diagnosis ───────────────────────────────────────────────────────
 
 /** Taxonomy of failure categories that ModelForge can diagnose */
@@ -517,10 +579,14 @@ export interface MigrationSession {
   target_model: string;
   /** Repository profile (populated after inspection) */
   profile: RepositoryProfile | null;
+  /** Baseline evaluation report on incumbent model (populated after baseline rehearsal) */
+  baseline_evaluation: EvaluationReport | null;
   /** Migration plan (populated after planning) */
   plan: MigrationPlan | null;
-  /** Evaluation reports (one per round) */
+  /** Evaluation reports (one per candidate round) */
   evaluations: EvaluationReport[];
+  /** Latest comparison between baseline and candidate evaluation */
+  latest_comparison: RehearsalComparisonMatrix | null;
   /** Failure diagnoses (one per diagnosis cycle) */
   diagnoses: FailureDiagnosis[];
   /** Canary plan (populated before deployment) */

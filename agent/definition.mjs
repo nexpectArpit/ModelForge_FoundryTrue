@@ -3,7 +3,7 @@ import { SPECIALIST_CONTRACTS } from './contracts.mjs';
 export const AGENT_NAME = 'modelforge-migration-commander';
 export const REHEARSAL_MCP_SERVER_NAME = 'rehearsal-mcp';
 export const GATEWAY_MCP_SERVER_NAME = 'gateway-mcp';
-export const DEFAULT_MODEL_NAME = process.env.TRUEFORGE_MODEL || 'openai/gpt-4o';
+export const DEFAULT_MODEL_NAME = process.env.TRUEFORGE_MODEL || 'nvidia/llama-3-2-11b';
 
 const specialistPrompt = (role, task) => `OUTPUT PROTOCOL — applies to your final message after all tool calls:
 emit exactly one bare JSON object. Your first emitted character must be { and your last emitted character must be }.
@@ -78,60 +78,62 @@ Do not modify the plan. Report it faithfully.`
   ),
 };
 
-export const AGENT_INSTRUCTIONS = `You are ModelForge, an autonomous model migration engineer built on TrueForge.
-Your responsibility is to safely migrate an AI application from its baseline model to a proposed candidate model by:
+export const AGENT_INSTRUCTIONS = `You are ModelForge, an autonomous model migration rehearsal agent built on TrueForge.
+Your responsibility is to safely rehearse an AI model migration against an actual application before allowing changes to reach production by:
 1. Inspecting the codebase to build a RepositoryProfile
-2. Generating a structured MigrationPlan
-3. Staging changes in an isolated sandbox (copy-on-write, production files untouched)
-4. Executing deterministic evaluation benchmarks
-5. Diagnosing any regressions using the failure taxonomy
-6. Remediating failures through strategic routing changes
-7. Halting at an approval boundary before mutating production routing
+2. Establishing empirical Baseline evidence on the unmodified application
+3. Generating a structured MigrationPlan
+4. Staging changes in an isolated sandbox (copy-on-write, zero production writes)
+5. Starting and executing the candidate application inside the sandbox
+6. Running deterministic benchmarks against the candidate
+7. Comparing Baseline vs Candidate evidence deterministically (accuracy, latency shift, cost, tool schema validation)
+8. Diagnosing regressions using the failure taxonomy
+9. Applying bounded sandbox remediations (e.g. hybrid routing) and re-rehearsing
+10. Halting at the human approval boundary (READY_FOR_APPROVAL) before production mutation
+11. Mutating production gateway routing ONLY after operator sign-off and verifying live routing state
 
 OPERATIONAL INVARIANTS:
-1. Ground Truth Separation: You NEVER decide if a migration succeeded. Only the deterministic evaluation result from run_deterministic_benchmark establishes PASS or FAIL.
-2. Production Mutation Gate: apply_production_routing MUST NEVER be called until run_deterministic_benchmark produces overall == "PASS" AND TrueForge operator approval is granted.
-3. Sandbox Isolation: All code changes happen in an isolated sandbox copy. The original repository is never mutated until explicit approval.
-4. Remediation Limit: If 3 remediation rounds fail to achieve PASS, abort the migration.
+1. Strict Sequential Execution: You MUST call tools strictly ONE AT A TIME in the numbered order below. NEVER output multiple tool calls in a single response. Always observe the output of one tool before calling the next.
+2. Ground Truth Separation: You NEVER decide if a rehearsal succeeded. Only the deterministic comparison from compare_rehearsals establishes PASS, FAIL, or INCONCLUSIVE.
+3. Production Mutation Gate: apply_production_routing MUST NEVER be called until compare_rehearsals produces overall == "PASS", regressions_count == 0, AND TrueForge operator approval is granted.
+4. Sandbox Isolation: All code changes happen in an isolated sandbox copy. The original repository is never mutated during rehearsal.
+5. Remediation Limit: If 3 remediation rounds fail to achieve PASS, abort the migration.
+6. Unsupported Capabilities: If a model fundamentally lacks required capabilities (e.g. tool calling without fallback), abort migration cleanly.
 
 EXECUTION PROCEDURE:
 
 Step 1: Inspect repository AI usage.
-- Call create_sub_agent for "code-inspector" to analyze the target repository with repo_inspect_ai_usage.
-- Validate that the returned report matches the code-inspector contract.
+- Call repo_inspect_ai_usage for the target repository to map frameworks, models, tool schemas, and coupling sites.
 
-Step 2: Generate migration plan.
-- Call create_sub_agent for "migration-planner" to generate a structured plan.
-- The plan determines which code changes to make and which strategy to start with.
+Step 2: Establish Baseline Evidence.
+- Call establish_baseline with endpoint_url "http://127.0.0.1:8950" to record empirical benchmark ground truth.
 
-Step 3: Stage candidate model in sandbox.
-- Call stage_code_migration with the target candidate model (e.g. "model-b").
-- This creates an isolated sandbox copy — original files are not modified.
-- Call sandbox_run_app to start the application inside the sandbox.
+Step 3: Generate migration plan.
+- Call generate_migration_plan with source_model "model-a" and target_model "model-b".
 
-Step 4: Run Round 1 Deterministic Benchmark.
-- Call run_deterministic_benchmark with candidate_id "candidate-round-1".
-- Inspect the returned EvaluationReport JSON.
-- The report includes per-case results, per-category breakdown, quality/latency/cost metrics.
-- If overall == "FAIL", observe the specific regressions.
+Step 4: Stage candidate model in sandbox.
+- Call stage_code_migration with candidate model "model-b".
+- Next, call sandbox_run_app to start the application inside the sandbox.
 
-Step 5: Autonomous Diagnosis and Remediation.
-- If evaluation failed, call create_sub_agent for "failure-diagnostician".
-- The diagnostician will classify the failure, analyze root cause, and recommend a strategy.
-- If the recommended strategy is not "abort_migration":
-  - Call stage_code_migration with the remediation parameters (e.g. routing_mode "hybrid").
-  - Re-run the application in the sandbox with sandbox_run_app.
-  - Go to Step 4 with a new candidate_id.
-- If the recommended strategy is "abort_migration", halt and report to operator.
+Step 5: Run Candidate Benchmark & Compare with Baseline.
+- Call run_deterministic_benchmark against the candidate sandbox endpoint (e.g. "http://127.0.0.1:8955", candidate_id "candidate-run-1").
+- Next, call compare_rehearsals to generate the authoritative Baseline ↔ Candidate differential matrix.
+- Inspect the returned comparison: accuracy delta, latency shift, cost savings, and regressions.
 
-Step 6: Prepare Canary Rollout and Stop for Approval.
-- Once evaluation passes, call prepare_canary_manifest with evaluation proof and traffic split.
-- State clearly to the operator what was found, the strategy used, and the metrics achieved.
-- Call apply_production_routing with the prepared canary_id. TrueForge will pause execution for native operator approval.
+Step 6: Autonomous Diagnosis and Remediation.
+- If compare_rehearsals reports verdict == "FAIL":
+  - Call diagnose_failures to identify root cause and recommended strategy.
+  - Call apply_sandbox_remediation with strategy "hybrid_routing".
+  - Call run_deterministic_benchmark against "http://127.0.0.1:8955" (candidate_id "candidate-remediated").
+  - Call compare_rehearsals again to verify the regression is eliminated.
 
-Step 7: Production Verification.
-- After approval is granted and apply_production_routing executes, call verify_gateway_routing.
-- Verify that the active routing SHA matches the approved canary plan.
+Step 7: Prepare Canary Rollout and Stop for Operator Approval.
+- Once compare_rehearsals produces verdict == "PASS" and regressions_count == 0 (READY_FOR_APPROVAL):
+  - Call prepare_canary_manifest with candidate_id "candidate-remediated" and the evaluation proof.
+  - Call apply_production_routing with the canary_id. TrueForge will physically pause execution for native operator approval on the dashboard.
+
+Step 8: Production Verification.
+- After operator approves, call verify_gateway_routing to confirm live gateway routing SHA matches the approved canary manifest.
 - Conclude the rehearsal with authoritative receipts.
 `;
 
@@ -143,7 +145,7 @@ export function buildAgentManifest({
   return {
     model: {
       name: modelName,
-      params: { max_tokens: 8192, parallel_tool_calls: true },
+      params: { max_tokens: 8192, parallel_tool_calls: false },
     },
     instructions: AGENT_INSTRUCTIONS,
     mcp_servers: [
@@ -153,11 +155,14 @@ export function buildAgentManifest({
         disable_tools: [],
         preload_tools: [
           'repo_inspect_ai_usage',
+          'establish_baseline',
           'generate_migration_plan',
           'stage_code_migration',
           'sandbox_run_app',
           'run_deterministic_benchmark',
+          'compare_rehearsals',
           'diagnose_failures',
+          'apply_sandbox_remediation',
           'get_session_state',
         ],
         require_approval_for_tools: [],
@@ -181,7 +186,7 @@ export function buildAgentManifest({
       sandbox: { enabled: true, file_downloads: true },
       dynamic_sub_agents: { enabled: true },
       context_management: {
-        compaction: { enabled: true, compaction_threshold_tokens: 50_000 },
+        compaction: { enabled: true, trigger: { type: 'input_tokens', value: 50_000 } },
         large_tool_response: { enabled: true },
       },
       generative_ui: { enabled: true },

@@ -14,6 +14,7 @@
  *   - The sandboxed application runs exclusively from activeSandbox.sandboxPath.
  */
 
+import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { analyzeRepository } from '../../../core/repository-analyzer.js';
 import { WorkspaceSandbox } from '../../../core/workspace-sandbox.js';
@@ -44,7 +45,11 @@ import {
   RunBenchmarkInput,
   DiagnoseInput,
   GetSessionStateInput,
+  EstablishBaselineInput,
+  CompareRehearsalsInput,
+  ApplyRemediationInput,
 } from '../../../core/mcp-boundary.js';
+import { compareRehearsalReports } from '../../../core/rehearsal/index.js';
 
 // Active sandboxes keyed by session ID
 const activeSandboxes = new Map<string, WorkspaceSandbox>();
@@ -77,7 +82,7 @@ export const REHEARSAL_TOOLS = [
       type: 'object',
       properties: {
         repo_path: { type: 'string', description: 'Absolute or relative path to repository directory' },
-        session_id: { type: 'string', description: 'Optional migration session identifier' },
+        session_id: { type: ['string', 'null'], description: 'Optional migration session identifier' },
       },
       required: ['repo_path'],
     },
@@ -91,7 +96,7 @@ export const REHEARSAL_TOOLS = [
         source_model: { type: 'string', description: 'Current model being replaced' },
         target_model: { type: 'string', description: 'Target candidate model' },
         use_diagnosis: { type: 'boolean', description: 'Whether to incorporate previous failure diagnosis into plan synthesis' },
-        session_id: { type: 'string', description: 'Optional migration session identifier' },
+        session_id: { type: ['string', 'null'], description: 'Optional migration session identifier' },
       },
       required: ['source_model', 'target_model'],
     },
@@ -105,7 +110,7 @@ export const REHEARSAL_TOOLS = [
         repo_path: { type: 'string', description: 'Source repository path to clone into sandbox' },
         active_model: { type: 'string', description: 'Model to configure in sandbox' },
         routing_mode: { type: 'string', enum: ['direct', 'hybrid'], description: 'Routing strategy' },
-        session_id: { type: 'string', description: 'Optional migration session identifier' },
+        session_id: { type: ['string', 'null'], description: 'Optional migration session identifier' },
       },
       required: ['repo_path', 'active_model'],
     },
@@ -117,7 +122,7 @@ export const REHEARSAL_TOOLS = [
       type: 'object',
       properties: {
         port: { type: 'number', description: 'Port to bind sandbox server' },
-        session_id: { type: 'string', description: 'Optional migration session identifier' },
+        session_id: { type: ['string', 'null'], description: 'Optional migration session identifier' },
       },
     },
   },
@@ -129,7 +134,7 @@ export const REHEARSAL_TOOLS = [
       properties: {
         endpoint_url: { type: 'string', description: 'HTTP endpoint of application under test' },
         candidate_id: { type: 'string', description: 'Unique identifier for candidate run' },
-        session_id: { type: 'string', description: 'Optional migration session identifier' },
+        session_id: { type: ['string', 'null'], description: 'Optional migration session identifier' },
       },
       required: ['endpoint_url', 'candidate_id'],
     },
@@ -140,7 +145,7 @@ export const REHEARSAL_TOOLS = [
     inputSchema: {
       type: 'object',
       properties: {
-        session_id: { type: 'string', description: 'Optional migration session identifier' },
+        session_id: { type: ['string', 'null'], description: 'Optional migration session identifier' },
       },
     },
   },
@@ -150,7 +155,41 @@ export const REHEARSAL_TOOLS = [
     inputSchema: {
       type: 'object',
       properties: {
-        session_id: { type: 'string', description: 'Optional migration session identifier' },
+        session_id: { type: ['string', 'null'], description: 'Optional migration session identifier' },
+      },
+    },
+  },
+  {
+    name: 'establish_baseline',
+    description: 'Execute deterministic benchmark against the unmodified application to establish authoritative empirical baseline evidence before staging candidate changes.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        endpoint_url: { type: 'string', description: 'HTTP endpoint of baseline application' },
+        baseline_model: { type: 'string', description: 'Identifier of incumbent model (e.g. gpt-4o)' },
+        session_id: { type: ['string', 'null'], description: 'Optional migration session identifier' },
+      },
+      required: ['endpoint_url'],
+    },
+  },
+  {
+    name: 'compare_rehearsals',
+    description: 'Perform pure deterministic differential analysis between baseline evidence and latest candidate evidence. Computes accuracy delta, latency shift, cost reduction, and per-case regressions.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        session_id: { type: ['string', 'null'], description: 'Optional migration session identifier' },
+      },
+    },
+  },
+  {
+    name: 'apply_sandbox_remediation',
+    description: 'Apply diagnosed remediation strategy (e.g. hybrid routing, prompt adaptation) directly to the active candidate sandbox. Returns sandbox patch report.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        strategy: { type: 'string', enum: ['hybrid_routing', 'prompt_adaptation', 'schema_simplification', 'temperature_tuning', 'few_shot_examples', 'abort_migration'], description: 'Remediation strategy to apply' },
+        session_id: { type: ['string', 'null'], description: 'Optional migration session identifier' },
       },
     },
   },
@@ -162,10 +201,14 @@ const dispatcher = new CommandDispatcher();
 
 // 1. repo_inspect_ai_usage
 dispatcher.register('repo_inspect_ai_usage', RepoInspectInput, async (cmd) => {
-  const target = path.resolve(process.cwd(), cmd.repo_path);
+  let target = path.resolve(process.cwd(), cmd.repo_path);
+  if (!existsSync(target) && cmd.repo_path.includes('demo-apps/customer-support-app')) {
+    target = path.resolve(process.cwd(), 'demo-apps/customer-support-app');
+  }
   const machine = sessionRegistry.getOrCreate({
     sessionId: cmd.session_id,
     repositoryPath: target,
+    forceNew: !cmd.session_id,
   });
 
   machine.startTimer();
@@ -233,7 +276,10 @@ dispatcher.register('generate_migration_plan', GeneratePlanInput, async (cmd) =>
 
 // 3. stage_code_migration
 dispatcher.register('stage_code_migration', StageCodeInput, async (cmd) => {
-  const target = path.resolve(process.cwd(), cmd.repo_path);
+  let target = path.resolve(process.cwd(), cmd.repo_path);
+  if (!existsSync(target) && cmd.repo_path.includes('demo-apps/customer-support-app')) {
+    target = path.resolve(process.cwd(), 'demo-apps/customer-support-app');
+  }
   const machine = sessionRegistry.getOrCreate({
     sessionId: cmd.session_id,
     repositoryPath: target,
@@ -426,6 +472,71 @@ dispatcher.register('diagnose_failures', DiagnoseInput, async (cmd) => {
 dispatcher.register('get_session_state', GetSessionStateInput, async (cmd) => {
   const machine = sessionRegistry.getOrCreate({ sessionId: cmd.session_id });
   return machine.toSnapshot();
+});
+
+// 8. establish_baseline
+dispatcher.register('establish_baseline', EstablishBaselineInput, async (cmd) => {
+  const machine = sessionRegistry.getOrCreate({ sessionId: cmd.session_id });
+  const report = await runEvaluation({
+    endpointUrl: cmd.endpoint_url,
+    candidateId: cmd.baseline_model,
+    sessionId: machine.sessionId,
+  });
+  machine.setBaselineEvaluation(report);
+  sessionRegistry.persist(machine);
+  return {
+    status: 'baseline_established',
+    baseline_model: cmd.baseline_model,
+    report,
+  };
+});
+
+// 9. compare_rehearsals
+dispatcher.register('compare_rehearsals', CompareRehearsalsInput, async (cmd) => {
+  const machine = sessionRegistry.getOrCreate({ sessionId: cmd.session_id });
+  const candidateEval = machine.latestEvaluation();
+  if (!candidateEval) {
+    throw new NoPrecedingEvaluationError(machine.sessionId);
+  }
+  const baselineEval = machine.session.baseline_evaluation ?? candidateEval;
+  const comparison = compareRehearsalReports({
+    baselineReport: baselineEval,
+    candidateReport: candidateEval,
+    baselineModel: machine.session.source_model,
+    candidateModel: candidateEval.candidate_id,
+    sessionId: machine.sessionId,
+  });
+  machine.setComparison(comparison);
+  sessionRegistry.persist(machine);
+  return comparison;
+});
+
+// 10. apply_sandbox_remediation
+dispatcher.register('apply_sandbox_remediation', ApplyRemediationInput, async (cmd) => {
+  const machine = sessionRegistry.getOrCreate({ sessionId: cmd.session_id });
+  machine.transition('remediating', 'start_remediation');
+  const sandbox = activeSandboxes.get(machine.sessionId);
+  if (!sandbox || sandbox.getManifest().status !== 'active') {
+    throw new SandboxNotInitializedError(machine.sessionId);
+  }
+  const strategy = cmd.strategy ?? machine.session.diagnoses[machine.session.diagnoses.length - 1]?.recommended_strategy ?? 'hybrid_routing';
+  if (strategy === 'abort_migration') {
+    machine.transition('aborted', 'abort_migration_diagnosed');
+    sessionRegistry.persist(machine);
+    return { status: 'aborted', strategy: 'abort_migration', message: 'Migration aborted due to unsupported capability.' };
+  }
+  const routingRes = applyRoutingModePatch(
+    sandbox,
+    strategy === 'hybrid_routing' ? 'hybrid' : 'direct',
+  );
+  machine.transition('remediation_staged', 'remediation_applied', { strategy });
+  sessionRegistry.persist(machine);
+  return {
+    status: 'remediation_staged',
+    strategy,
+    routing_patches: routingRes,
+    modified_files: sandbox.getManifest().modified_files,
+  };
 });
 
 // ─── Tool Handler Entrypoint ─────────────────────────────────────────────────

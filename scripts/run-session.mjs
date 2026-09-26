@@ -36,7 +36,20 @@ async function runSession() {
   const sessionId = sessionResp.data.id;
   console.log(`[session] Session opened: ${sessionId}`);
 
-  const userPrompt = `Please inspect the application at "demo-apps/customer-support-app", stage candidate model "model-b" into the sandbox, evaluate against the benchmark suite, diagnose any regressions, stage a hybrid routing remediation if needed, re-test, prepare a canary plan, and request human approval to deploy to production.`;
+  const repoPath = 'demo-apps/customer-support-app';
+  const userPrompt = `Please execute a migration rehearsal for "${repoPath}".
+You must call each tool strictly one at a time sequentially. Do not call multiple tools in parallel.
+1. Inspect the repository AI usage using repo_path "${repoPath}".
+2. Establish baseline evidence against the running baseline application endpoint at "http://127.0.0.1:8950".
+3. Generate a migration plan for candidate target model "model-b".
+4. Stage candidate model "model-b" using repo_path "${repoPath}" into an isolated sandbox copy.
+5. Run the candidate application in the sandbox.
+6. Run the deterministic benchmark against the candidate sandbox application.
+7. Call compare_rehearsals to compare candidate evidence against the baseline evidence.
+8. If regressions are detected, call diagnose_failures and apply_sandbox_remediation to remediate the sandbox, then re-test with run_deterministic_benchmark and compare_rehearsals.
+9. When comparison passes, call prepare_canary_manifest with the evaluation proof.
+10. Call apply_production_routing with the canary_id (which will pause for operator approval).
+11. After approval, verify production routing with verify_gateway_routing.`;
 
   console.log(`\n[session] Dispatching migration instruction to agent...`);
   console.log(`[session] Streaming SSE turn events from TrueForge:\n`);
@@ -58,25 +71,31 @@ async function runSession() {
       } else if (event.type === 'tool.call') {
         console.log(`\x1b[34m[tool.call]\x1b[0m ${event.tool} with args: ${JSON.stringify(event.arguments)}`);
       } else if (event.type === 'tool.response') {
-        console.log(`\x1b[34m[tool.response]\x1b[0m ${event.tool} returned output`);
+        console.log(`\x1b[34m[tool.response]\x1b[0m ${event.tool}:`, JSON.stringify(event.output ?? event.content ?? event, null, 2));
       } else if (event.type === 'tool.approval_required') {
-        console.log(`\n\x1b[43m\x1b[30m [TOOL APPROVAL REQUIRED] \x1b[0m`);
-        console.log(`Tool: ${event.tool_calls?.[0]?.tool}`);
-        console.log(`Arguments: ${JSON.stringify(event.tool_calls?.[0]?.arguments, null, 2)}`);
+        console.log(`\n\x1b[43m\x1b[30m [TOOL APPROVAL REQUIRED] \x1b[0m`, JSON.stringify(event, null, 2));
+
+        const pendingCall = event.tool_calls?.[0] ?? event;
+        const toolName = pendingCall?.tool ?? pendingCall?.function?.name ?? pendingCall?.name ?? 'apply_production_routing';
+        const toolArgs = pendingCall?.arguments
+          ? (typeof pendingCall.arguments === 'string' ? JSON.parse(pendingCall.arguments) : pendingCall.arguments)
+          : {};
+        console.log(`Tool: ${toolName}`);
+        console.log(`Arguments: ${JSON.stringify(toolArgs, null, 2)}`);
 
         const approved = await promptApproval('Do you authorize this production routing change?');
-        const pendingCall = event.tool_calls?.[0];
-        const canaryId = pendingCall?.arguments?.canary_id;
+        const toolCallId = pendingCall?.id ?? event.tool_call_id;
+        const canaryId = toolArgs?.canary_id;
 
         // Generate and register cryptographic approval artifact
         try {
-          const { issueApprovalArtifact, registerApprovalArtifact } = await import('../core/approval-token.js');
-          const { getPreparedCanaryPlan } = await import('../mcp-servers/gateway-mcp/src/canary-manager.js');
-          const plan = getPreparedCanaryPlan(canaryId);
+          const { issueApprovalArtifact, registerApprovalArtifact } = await import('../core/approval-token.ts');
+          const { getPreparedCanaryPlan, getLatestPreparedCanaryPlan } = await import('../mcp-servers/gateway-mcp/src/canary-manager.ts');
+          const plan = (canaryId ? getPreparedCanaryPlan(canaryId) : null) ?? getLatestPreparedCanaryPlan();
           if (plan) {
             const artifact = issueApprovalArtifact({
-              sessionId,
-              canaryId,
+              sessionId: plan.session_id,
+              canaryId: plan.canary_id,
               manifestSha: plan.manifest_sha,
               decision: approved ? 'allow' : 'deny',
               operator: 'trueforge-operator-console',
@@ -96,7 +115,7 @@ async function runSession() {
               {
                 type: 'user.tool_approval',
                 thread_id: event.thread_id,
-                tool_call_id: pendingCall.id,
+                tool_call_id: toolCallId,
                 approval: { status: approved ? 'allow' : 'deny' },
               },
             ],
@@ -104,6 +123,12 @@ async function runSession() {
           async ev => {
             if (ev.type === 'model.message' && ev.content) {
               console.log(`\x1b[32m[agent post-approval]\x1b[0m ${ev.content}`);
+            } else if (ev.type === 'tool.call') {
+              console.log(`\x1b[34m[tool.call post-approval]\x1b[0m ${ev.tool} with args: ${JSON.stringify(ev.arguments)}`);
+            } else if (ev.type === 'tool.response') {
+              console.log(`\x1b[34m[tool.response post-approval]\x1b[0m ${ev.tool}:`, JSON.stringify(ev.output ?? ev.content ?? ev, null, 2));
+            } else {
+              console.log(`[post-approval event: ${ev.type}]`);
             }
           }
         );

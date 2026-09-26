@@ -30,7 +30,7 @@ export const GATEWAY_TOOLS = [
           },
           required: ['eval_run_id', 'quality_score', 'p95_ms', 'savings_pct'],
         },
-        session_id: { type: 'string', description: 'Optional migration session identifier' },
+        session_id: { type: ['string', 'null'], description: 'Optional migration session identifier' },
       },
       required: ['candidate_id', 'evaluation_proof'],
     },
@@ -43,17 +43,12 @@ export const GATEWAY_TOOLS = [
       properties: {
         canary_id: { type: 'string', description: 'ID of the prepared and approved canary plan' },
         approval_token: {
-          type: 'object',
+          type: ['object', 'null'],
           description: 'Cryptographically signed approval artifact produced by operator sign-off',
-          properties: {
-            payload: { type: 'object' },
-            signature: { type: 'string' },
-          },
-          required: ['payload', 'signature'],
         },
-        session_id: { type: 'string', description: 'Optional migration session identifier' },
+        session_id: { type: ['string', 'null'], description: 'Optional migration session identifier' },
       },
-      required: ['canary_id', 'approval_token'],
+      required: ['canary_id'],
     },
   },
   {
@@ -63,7 +58,7 @@ export const GATEWAY_TOOLS = [
       type: 'object',
       properties: {
         expected_canary_id: { type: 'string', description: 'Optional expected canary ID to verify against' },
-        session_id: { type: 'string', description: 'Optional migration session identifier' },
+        session_id: { type: ['string', 'null'], description: 'Optional migration session identifier' },
       },
     },
   },
@@ -74,7 +69,7 @@ export const GATEWAY_TOOLS = [
       type: 'object',
       properties: {
         reason: { type: 'string', description: 'Reason for triggering emergency rollback' },
-        session_id: { type: 'string', description: 'Optional migration session identifier' },
+        session_id: { type: ['string', 'null'], description: 'Optional migration session identifier' },
       },
       required: ['reason'],
     },

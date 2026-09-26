@@ -705,7 +705,7 @@ describe('Principle #12: Strategy + Adapter Pattern (Evaluation)', () => {
 import { rehearsalDispatcher } from '../mcp-servers/rehearsal-mcp/src/server.js';
 
 describe('Principle #1: Separation of Concerns (Rehearsal Dispatcher)', () => {
-  it('rehearsalDispatcher registers all 7 rehearsal tools', () => {
+  it('rehearsalDispatcher registers all canonical rehearsal tools', () => {
     const tools = rehearsalDispatcher.getRegisteredTools();
     expect(tools).toContain('repo_inspect_ai_usage');
     expect(tools).toContain('generate_migration_plan');
@@ -714,7 +714,10 @@ describe('Principle #1: Separation of Concerns (Rehearsal Dispatcher)', () => {
     expect(tools).toContain('run_deterministic_benchmark');
     expect(tools).toContain('diagnose_failures');
     expect(tools).toContain('get_session_state');
-    expect(tools.length).toBe(7);
+    expect(tools).toContain('establish_baseline');
+    expect(tools).toContain('compare_rehearsals');
+    expect(tools).toContain('apply_sandbox_remediation');
+    expect(tools.length).toBe(10);
   });
 });
 

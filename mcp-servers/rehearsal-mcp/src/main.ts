@@ -13,6 +13,13 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // GET /mcp responds with 405 according to Streamable HTTP spec (no SSE stream offered)
+  if (req.method === 'GET' && (url.pathname === '/mcp' || url.pathname === '/')) {
+    res.writeHead(405, { 'Content-Type': 'application/json', 'Allow': 'POST' });
+    res.end(JSON.stringify({ error: 'SSE stream not offered; use HTTP POST' }));
+    return;
+  }
+
   // Standard MCP JSON-RPC / REST Endpoint
   if (req.method === 'POST' && (url.pathname === '/mcp' || url.pathname === '/')) {
     let body = '';
@@ -20,6 +27,20 @@ const server = http.createServer(async (req, res) => {
     req.on('end', async () => {
       try {
         const payload = JSON.parse(body || '{}');
+
+        // Handle JSON-RPC notifications (no id)
+        if (payload.method === 'notifications/initialized' || payload.method?.startsWith('notifications/')) {
+          res.writeHead(202, { 'Content-Type': 'application/json' });
+          res.end();
+          return;
+        }
+
+        // Handle ping
+        if (payload.method === 'ping') {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ jsonrpc: '2.0', id: payload.id, result: {} }));
+          return;
+        }
 
         // Handle JSON-RPC method dispatch
         if (payload.method === 'initialize') {

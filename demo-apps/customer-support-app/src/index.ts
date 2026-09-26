@@ -19,20 +19,22 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  // Chat completion endpoint
-  if (req.method === 'POST' && url.pathname === '/api/chat') {
+  // Chat completion endpoint (supports /, /chat, /api/chat)
+  if (req.method === 'POST' && (url.pathname === '/api/chat' || url.pathname === '/' || url.pathname === '/chat')) {
     let body = '';
     req.on('data', chunk => { body += chunk; });
     req.on('end', async () => {
       try {
         const payload = JSON.parse(body || '{}');
-        if (!payload.message) {
+        const message = payload.message ?? payload.prompt ?? payload.input ?? '';
+        if (!message) {
           res.writeHead(400, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ error: 'message field is required' }));
+          res.end(JSON.stringify({ error: 'message or prompt field is required' }));
           return;
         }
 
-        const result = await processChat(payload);
+        const task = payload.task ?? payload.category;
+        const result = await processChat({ ...payload, message, task });
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify(result));
       } catch (err) {

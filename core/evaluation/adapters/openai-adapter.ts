@@ -24,11 +24,12 @@ export class OpenAICompatibleAdapter implements EvaluationAdapter {
   private customHeaders: Record<string, string>;
 
   constructor(options: OpenAICompatibleAdapterOptions) {
-    const base = options.baseUrl.replace(/\/+$/, '');
+    const rawBase = options.baseUrl || process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1';
+    const base = rawBase.replace(/\/+$/, '');
     this.endpointUrl = base.endsWith('/chat/completions')
       ? base
       : `${base}/chat/completions`;
-    this.apiKey = options.apiKey;
+    this.apiKey = options.apiKey || process.env.OPENAI_API_KEY;
     this.model = options.model;
     this.timeoutMs = options.timeoutMs ?? 20000;
     this.customHeaders = options.customHeaders ?? {};

@@ -18,42 +18,85 @@ import { MCPBoundaryError } from './errors.js';
 
 // ─── Validated MCP Input Schemas ─────────────────────────────────────────────
 
+const OptionalSessionId = z.unknown().optional().transform(val => {
+  if (typeof val === 'string' && val.length > 0) {
+    const lower = val.toLowerCase();
+    if (
+      lower === 'none' ||
+      lower === 'null' ||
+      lower === 'undefined' ||
+      lower.includes('optional') ||
+      lower.includes('identifier') ||
+      lower.includes('session')
+    ) {
+      return undefined;
+    }
+    return val;
+  }
+  return undefined;
+});
+
 export const RepoInspectInput = z.object({
   repo_path: z.string().min(1, 'repo_path is required'),
-  session_id: z.string().optional(),
+  session_id: OptionalSessionId,
 });
 
 export const GeneratePlanInput = z.object({
   source_model: z.string().min(1, 'source_model is required'),
   target_model: z.string().min(1, 'target_model is required'),
-  use_diagnosis: z.boolean().optional().default(false),
-  session_id: z.string().optional(),
+  use_diagnosis: z.coerce.boolean().optional().default(false),
+  session_id: OptionalSessionId,
 });
 
 export const StageCodeInput = z.object({
   repo_path: z.string().min(1, 'repo_path is required'),
   active_model: z.string().min(1, 'active_model is required'),
   routing_mode: z.enum(['direct', 'hybrid']).optional().default('direct'),
-  session_id: z.string().optional(),
+  session_id: OptionalSessionId,
 });
 
 export const SandboxRunInput = z.object({
-  port: z.number().int().positive().optional().default(8955),
-  session_id: z.string().optional(),
+  port: z.coerce.number().int().positive().optional().default(8955),
+  session_id: OptionalSessionId,
 });
 
 export const RunBenchmarkInput = z.object({
   endpoint_url: z.string().url('endpoint_url must be a valid URL'),
   candidate_id: z.string().min(1, 'candidate_id is required'),
-  session_id: z.string().optional(),
+  session_id: OptionalSessionId,
 });
 
 export const DiagnoseInput = z.object({
-  session_id: z.string().optional(),
+  session_id: OptionalSessionId,
 });
 
 export const GetSessionStateInput = z.object({
-  session_id: z.string().optional(),
+  session_id: OptionalSessionId,
+});
+
+export const EstablishBaselineInput = z.object({
+  endpoint_url: z.string().url('endpoint_url must be a valid URL'),
+  baseline_model: z.string().optional().default('baseline-model'),
+  session_id: OptionalSessionId,
+});
+
+export const CompareRehearsalsInput = z.object({
+  session_id: OptionalSessionId,
+});
+
+export const ApplyRemediationInput = z.object({
+  strategy: z.preprocess(
+    val => typeof val === 'string' ? val.replace(/-/g, '_') : val,
+    z.enum([
+      'hybrid_routing',
+      'prompt_adaptation',
+      'schema_simplification',
+      'temperature_tuning',
+      'few_shot_examples',
+      'abort_migration',
+    ]).optional()
+  ),
+  session_id: OptionalSessionId,
 });
 
 // ─── Typed Domain Commands ───────────────────────────────────────────────────
@@ -65,6 +108,9 @@ export type SandboxRunCommand = z.infer<typeof SandboxRunInput>;
 export type RunBenchmarkCommand = z.infer<typeof RunBenchmarkInput>;
 export type DiagnoseCommand = z.infer<typeof DiagnoseInput>;
 export type GetSessionStateCommand = z.infer<typeof GetSessionStateInput>;
+export type EstablishBaselineCommand = z.infer<typeof EstablishBaselineInput>;
+export type CompareRehearsalsCommand = z.infer<typeof CompareRehearsalsInput>;
+export type ApplyRemediationCommand = z.infer<typeof ApplyRemediationInput>;
 
 // ─── Input Schemas Registry (Principle #13: Open/closed extensibility) ───────
 
@@ -76,6 +122,9 @@ export const MCP_INPUT_SCHEMAS: Record<string, z.ZodType<unknown>> = {
   run_deterministic_benchmark: RunBenchmarkInput,
   diagnose_failures: DiagnoseInput,
   get_session_state: GetSessionStateInput,
+  establish_baseline: EstablishBaselineInput,
+  compare_rehearsals: CompareRehearsalsInput,
+  apply_sandbox_remediation: ApplyRemediationInput,
 };
 
 // ─── Boundary Validation Gate ────────────────────────────────────────────────

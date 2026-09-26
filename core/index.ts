@@ -37,3 +37,7 @@ export * from './patching-engine.js';
 
 // Layer 6: MCP boundary
 export * from './mcp-boundary.js';
+
+// Layer 7: Rehearsal differential comparison
+export * from './rehearsal/index.js';
+
