@@ -39,6 +39,12 @@ export const MODEL_PATTERNS: Array<{ regex: RegExp; weight: number }> = [
   // Generic known model families
   { regex: /['"](gpt-4o(?:-mini)?|gpt-4-turbo|gpt-4|gpt-3\.5-turbo)['"]/i, weight: 0.95 },
   { regex: /['"](claude-3-(?:5-sonnet|opus|sonnet|haiku)(?:-\d{8})?)['"]/i, weight: 0.95 },
+  { regex: /['"](llama-3(?:\.[12])?-(?:70b|8b|405b)(?:-instruct)?)['"]/i, weight: 0.95 },
+  { regex: /['"](mixtral-8x7b(?:-instruct)?|mistral-7b(?:-instruct)?)['"]/i, weight: 0.95 },
+  { regex: /['"](gemini-1\.5-(?:pro|flash)(?:-latest)?)['"]/i, weight: 0.95 },
+  { regex: /['"](deepseek-(?:chat|coder|r1))['"]/i, weight: 0.95 },
+  { regex: /['"](qwen-2\.5-(?:72b|7b|32b))['"]/i, weight: 0.95 },
+
   // Architecture/testing model identifiers
   { regex: /['"](model-[ab])['"]/i, weight: 0.90 },
 
