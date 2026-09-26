@@ -1,0 +1,165 @@
+[
+  {
+    "id": "qa-01",
+    "category": "qa",
+    "input": "What is your return policy for opened items?",
+    "assertions": {
+      "contains_any": ["30 days", "return", "refund", "store credit"],
+      "max_latency_ms": 1000
+    }
+  },
+  {
+    "id": "qa-02",
+    "category": "qa",
+    "input": "Do you accept returns without packaging?",
+    "assertions": {
+      "contains_any": ["packaging", "accessories", "policy", "condition"],
+      "max_latency_ms": 1000
+    }
+  },
+  {
+    "id": "qa-03",
+    "category": "qa",
+    "input": "Can I exchange an item for store credit?",
+    "assertions": {
+      "contains_any": ["store credit", "exchange", "refund"],
+      "max_latency_ms": 1000
+    }
+  },
+  {
+    "id": "qa-04",
+    "category": "qa",
+    "input": "How long do I have to initiate a return?",
+    "assertions": {
+      "contains_any": ["30 days", "month", "policy"],
+      "max_latency_ms": 1000
+    }
+  },
+  {
+    "id": "sum-01",
+    "category": "summarize",
+    "input": "Customer Jane Doe called regarding order #4812. She was charged twice on her Visa card due to a payment gateway timeout. She is requesting an immediate chargeback or refund and needs high priority escalation.",
+    "assertions": {
+      "contains_all": ["Jane Doe", "4812", "refund"],
+      "max_latency_ms": 1200
+    }
+  },
+  {
+    "id": "sum-02",
+    "category": "summarize",
+    "input": "User reported that their shipment was delayed for 10 days. The tracking number shows stuck in transit. The user is frustrated and wants an immediate update.",
+    "assertions": {
+      "contains_any": ["delayed", "shipment", "transit"],
+      "max_latency_ms": 1200
+    }
+  },
+  {
+    "id": "sum-03",
+    "category": "summarize",
+    "input": "Account verification failed for user John Smith after multiple 2FA attempts. Need manual ID review from compliance team.",
+    "assertions": {
+      "contains_any": ["verification", "2FA", "compliance", "John Smith"],
+      "max_latency_ms": 1200
+    }
+  },
+  {
+    "id": "sum-04",
+    "category": "summarize",
+    "input": "Order damaged upon arrival. Package was crushed and contents broken. Customer took photos and requested replacement delivery immediately.",
+    "assertions": {
+      "contains_any": ["damaged", "replacement", "crushed", "package"],
+      "max_latency_ms": 1200
+    }
+  },
+  {
+    "id": "ext-01",
+    "category": "extract",
+    "input": "User US-9921 wants to cancel subscription on plan Pro Annual due to negative experience.",
+    "assertions": {
+      "structured_schema": {
+        "user_id": "US-9921",
+        "action": "cancel_subscription",
+        "plan": "Pro Annual"
+      },
+      "max_latency_ms": 1000
+    }
+  },
+  {
+    "id": "ext-02",
+    "category": "extract",
+    "input": "Customer US-9921 expressed negative sentiment regarding subscription pricing on Pro Annual.",
+    "assertions": {
+      "structured_schema": {
+        "user_id": "US-9921",
+        "sentiment": "negative"
+      },
+      "max_latency_ms": 1000
+    }
+  },
+  {
+    "id": "ext-03",
+    "category": "extract",
+    "input": "Please parse user US-9921 request: action cancel_subscription on Pro Annual plan.",
+    "assertions": {
+      "structured_schema": {
+        "user_id": "US-9921",
+        "action": "cancel_subscription"
+      },
+      "max_latency_ms": 1000
+    }
+  },
+  {
+    "id": "tool-01",
+    "category": "tool",
+    "input": "Open a high priority billing ticket for order #4812 and user US-9921.",
+    "assertions": {
+      "expected_tool": "create_ticket",
+      "validate_tool_schema": "CreateTicketSchema",
+      "required_args": {
+        "order_id": 4812,
+        "user_id": "US-9921",
+        "issue_type": "billing",
+        "priority": "high"
+      }
+    }
+  },
+  {
+    "id": "tool-02",
+    "category": "tool",
+    "input": "Create a billing ticket for customer US-9921 with order number 4812 priority high.",
+    "assertions": {
+      "expected_tool": "create_ticket",
+      "validate_tool_schema": "CreateTicketSchema",
+      "required_args": {
+        "order_id": 4812,
+        "user_id": "US-9921",
+        "issue_type": "billing",
+        "priority": "high"
+      }
+    }
+  },
+  {
+    "id": "tool-03",
+    "category": "tool",
+    "input": "Please check the refund status for order 9841.",
+    "assertions": {
+      "expected_tool": "query_refund_status",
+      "validate_tool_schema": "QueryRefundStatusSchema",
+      "required_args": {
+        "order_id": 9841
+      }
+    }
+  },
+  {
+    "id": "tool-04",
+    "category": "tool",
+    "input": "Inquire about refund progress on order 9841 immediately.",
+    "assertions": {
+      "expected_tool": "query_refund_status",
+      "validate_tool_schema": "QueryRefundStatusSchema",
+      "required_args": {
+        "order_id": 9841
+      }
+    }
+  }
+]
