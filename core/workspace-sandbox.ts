@@ -266,7 +266,10 @@ export class WorkspaceSandbox {
 
   private assertActive(): void {
     if (this.manifest.status !== 'active') {
-      throw new Error('Sandbox is not active, cannot modify');
+      throw new SandboxLifecycleError(
+        `Sandbox is ${this.manifest.status}, cannot modify`,
+        this.manifest.status,
+      );
     }
   }
 

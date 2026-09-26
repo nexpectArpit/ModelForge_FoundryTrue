@@ -237,7 +237,7 @@ export class MigrationStateMachine {
 
   setProfile(profile: RepositoryProfile): void {
     if (this.session.state !== 'inspection_complete') {
-      throw new Error('Cannot set profile: invalid lifecycle state');
+      throw new InvalidStateForOperationError('setProfile', this.session.state, ['inspection_complete']);
     }
     this.store.saveProfile(this.session.session_id, profile);
     this.session.profile = profile;
@@ -245,7 +245,7 @@ export class MigrationStateMachine {
 
   setPlan(plan: MigrationPlan): void {
     if (this.session.state !== 'plan_ready') {
-      throw new Error('Cannot set profile: invalid lifecycle state');
+      throw new InvalidStateForOperationError('setPlan', this.session.state, ['plan_ready']);
     }
     this.store.savePlan(this.session.session_id, plan);
     this.session.plan = plan;
@@ -256,7 +256,7 @@ export class MigrationStateMachine {
       this.session.state !== 'evaluation_complete' &&
       this.session.state !== 're_evaluation_complete'
     ) {
-      throw new Error('Cannot set profile: invalid lifecycle state');
+      throw new InvalidStateForOperationError('addEvaluation', this.session.state, ['evaluation_complete', 're_evaluation_complete']);
     }
     this.store.recordEvaluation(this.session.session_id, report);
     this.session.evaluations.push(report);
@@ -264,7 +264,7 @@ export class MigrationStateMachine {
 
   addDiagnosis(diagnosis: FailureDiagnosis): void {
     if (this.session.state !== 'diagnosis_complete') {
-      throw new Error('Cannot set profile: invalid lifecycle state');
+      throw new InvalidStateForOperationError('addDiagnosis', this.session.state, ['diagnosis_complete']);
     }
     const nextRound = this.session.remediation_round + 1;
     this.store.recordDiagnosis(this.session.session_id, diagnosis);
@@ -281,7 +281,7 @@ export class MigrationStateMachine {
 
   setCanary(canary: CanaryPlan): void {
     if (this.session.state !== 'canary_ready') {
-      throw new Error('Cannot set profile: invalid lifecycle state');
+      throw new InvalidStateForOperationError('setCanary', this.session.state, ['canary_ready']);
     }
     this.store.saveCanary(this.session.session_id, canary);
     this.session.canary = canary;
@@ -325,7 +325,7 @@ export class MigrationStateMachine {
   /** Generate the final immutable audit receipt */
   generateReceipt(): AuditReceipt {
     if (!this.isTerminal()) {
-      throw new Error('Cannot set profile: invalid lifecycle state');
+      throw new InvalidStateForOperationError('generateReceipt', this.session.state, ['completed', 'failed', 'aborted']);
     }
 
     const lastEval = this.latestEvaluation();
