@@ -68,6 +68,19 @@ export type EventHandler = (event: OrchestratorEvent) => void;
 // ─── Orchestrator Ports (Principle #3: Dependency Inversion) ─────────────────
 
 /** Injectable dependencies for the orchestrator */
+export interface OrchestratorPorts {
+  /** Repository analyzer (default: built-in analyzeRepository) */
+  analyzer?: AnalyzerPort;
+  /** Migration planner (default: built-in generateMigrationPlan) */
+  planner?: PlannerPort;
+  /** Evaluation engine (default: built-in runEvaluation) */
+  evaluator?: EvaluatorPort;
+  /** Failure diagnostician (default: built-in diagnoseFailures) */
+  diagnostician?: DiagnosticsPort;
+  /** Observability sink */
+  observer?: ObservabilityPort;
+}
+
 // ─── Orchestrator Options ────────────────────────────────────────────────────
 
 export interface OrchestratorOptions {
@@ -97,7 +110,7 @@ export interface OrchestratorOptions {
   /** Application health check path */
   healthCheckPath?: string;
   /** Injectable port implementations (Principle #3) */
-  ports?: any;
+  ports?: OrchestratorPorts;
 }
 
 // ─── Default Port Adapters (Principle #2: Ports & Adapters) ──────────────────
