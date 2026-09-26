@@ -1,0 +1,191 @@
+{
+  "contract_version": "2.0",
+  "session_id": "session-muibojv1-j7ga8b",
+  "outcome": "completed",
+  "started_at": "2026-09-26T11:44:52.633Z",
+  "ended_at": "2026-09-26T11:45:14.014Z",
+  "total_duration_ms": 21381,
+  "repository_name": "customer-support-app",
+  "source_model": "model-a",
+  "target_model": "model-b",
+  "final_strategy": "abort",
+  "total_evaluation_rounds": 2,
+  "total_remediation_rounds": 0,
+  "final_quality_score": 1,
+  "final_latency_p95_ms": 69,
+  "final_cost_savings_pct": 93,
+  "canary_id": "canary-muibosnm-cy9w",
+  "manifest_sha": "6c88c88807e189c4",
+  "events": [
+    {
+      "step_id": "step-inspecting-muibojvh",
+      "timestamp": "2026-09-26T11:44:52.637Z",
+      "from_state": "initialized",
+      "to_state": "inspecting",
+      "action": "repo_inspect_ai_usage",
+      "payload": {
+        "repo_path": "/Users/arpittripathi/Desktop/foundryTrue/modelforge/demo-apps/customer-support-app"
+      },
+      "duration_ms": 0
+    },
+    {
+      "step_id": "step-inspection_complete-muibojw5",
+      "timestamp": "2026-09-26T11:44:52.661Z",
+      "from_state": "inspecting",
+      "to_state": "inspection_complete",
+      "action": "inspection_complete",
+      "payload": {
+        "frameworks": 1,
+        "references": 44
+      },
+      "duration_ms": 23
+    },
+    {
+      "step_id": "step-planning-muibomwp",
+      "timestamp": "2026-09-26T11:44:56.570Z",
+      "from_state": "inspection_complete",
+      "to_state": "planning",
+      "action": "generate_migration_plan",
+      "payload": {
+        "source_model": "gpt-4o",
+        "target_model": "model-b"
+      },
+      "duration_ms": 0
+    },
+    {
+      "step_id": "step-plan_ready-muibomwt",
+      "timestamp": "2026-09-26T11:44:56.573Z",
+      "from_state": "planning",
+      "to_state": "plan_ready",
+      "action": "plan_generated",
+      "payload": {
+        "strategy": "abort",
+        "changes": 0
+      },
+      "duration_ms": 2
+    },
+    {
+      "step_id": "step-staging-muibonmt",
+      "timestamp": "2026-09-26T11:44:57.509Z",
+      "from_state": "plan_ready",
+      "to_state": "staging",
+      "action": "create_sandbox",
+      "payload": {
+        "active_model": "model-b",
+        "routing_mode": "direct"
+      },
+      "duration_ms": 0
+    },
+    {
+      "step_id": "step-staged-muibono1",
+      "timestamp": "2026-09-26T11:44:57.553Z",
+      "from_state": "staging",
+      "to_state": "staged",
+      "action": "sandbox_staged",
+      "payload": {
+        "sandbox_path": "/Users/arpittripathi/Desktop/foundryTrue/modelforge/demo-apps/.modelforge-sandboxes/sandbox-muibonmu-0uuw",
+        "modified_files": [
+          "src/config.ts",
+          "src/config.js"
+        ]
+      },
+      "duration_ms": 43
+    },
+    {
+      "step_id": "step-evaluating-muibopvp",
+      "timestamp": "2026-09-26T11:45:00.422Z",
+      "from_state": "staged",
+      "to_state": "evaluating",
+      "action": "start_evaluation",
+      "payload": {
+        "candidate_id": "candidate-model-b",
+        "endpoint_url": "http://127.0.0.1:8955"
+      },
+      "duration_ms": 0
+    },
+    {
+      "step_id": "step-evaluation_complete-muiboq8z",
+      "timestamp": "2026-09-26T11:45:00.899Z",
+      "from_state": "evaluating",
+      "to_state": "evaluation_complete",
+      "action": "evaluation_complete",
+      "payload": {
+        "overall": "PASS",
+        "quality_score": 1,
+        "regressions_count": 0
+      },
+      "duration_ms": 476
+    },
+    {
+      "step_id": "step-preparing_canary-muibosnl",
+      "timestamp": "2026-09-26T11:45:04.017Z",
+      "from_state": "evaluation_complete",
+      "to_state": "preparing_canary",
+      "action": "prepare_canary_manifest",
+      "payload": {
+        "candidate_id": "candidate-model-b",
+        "routing_architecture": "single_candidate"
+      },
+      "duration_ms": 0
+    },
+    {
+      "step_id": "step-canary_ready-muibosnp",
+      "timestamp": "2026-09-26T11:45:04.021Z",
+      "from_state": "preparing_canary",
+      "to_state": "canary_ready",
+      "action": "canary_prepared",
+      "payload": {
+        "canary_id": "canary-muibosnm-cy9w",
+        "manifest_sha": "6c88c88807e189c4"
+      },
+      "duration_ms": 3
+    },
+    {
+      "step_id": "step-awaiting_approval-muiboz3o",
+      "timestamp": "2026-09-26T11:45:12.372Z",
+      "from_state": "canary_ready",
+      "to_state": "awaiting_approval",
+      "action": "operator_approval_verified",
+      "payload": {
+        "operator": "trueforge-operator-console",
+        "issued_at": "2026-09-26T11:45:12.309Z"
+      },
+      "duration_ms": 0
+    },
+    {
+      "step_id": "step-applying-muiboz3p",
+      "timestamp": "2026-09-26T11:45:12.373Z",
+      "from_state": "awaiting_approval",
+      "to_state": "applying",
+      "action": "apply_production_routing",
+      "payload": {
+        "canary_id": "canary-muibosnm-cy9w",
+        "manifest_sha": "6c88c88807e189c4"
+      },
+      "duration_ms": 0
+    },
+    {
+      "step_id": "step-verifying-muiboz3r",
+      "timestamp": "2026-09-26T11:45:12.375Z",
+      "from_state": "applying",
+      "to_state": "verifying",
+      "action": "routing_applied",
+      "payload": {
+        "active_sha": "6c88c88807e189c4"
+      },
+      "duration_ms": 0
+    },
+    {
+      "step_id": "step-completed-muibp0da",
+      "timestamp": "2026-09-26T11:45:14.014Z",
+      "from_state": "verifying",
+      "to_state": "completed",
+      "action": "routing_verified",
+      "payload": {
+        "active_sha": "6c88c88807e189c4"
+      },
+      "duration_ms": 1637
+    }
+  ],
+  "receipt_sha": "ee9b942a2c251efd7fffbaa0cfa14acf52729392c2008abf4c39255639797a16"
+}

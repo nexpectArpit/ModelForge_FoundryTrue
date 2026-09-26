@@ -6,6 +6,18 @@
     "esModuleInterop": true,
     "strict": true,
     "skipLibCheck": true,
-    "resolveJsonModule": true
-  }
+    "resolveJsonModule": true,
+    "allowJs": true
+  },
+  "include": [
+    "core/**/*",
+    "mcp-servers/**/*",
+    "tests/**/*"
+  ],
+  "exclude": [
+    "apps/**/*",
+    "tests/fixtures/**/*",
+    "node_modules",
+    "dist"
+  ]
 }

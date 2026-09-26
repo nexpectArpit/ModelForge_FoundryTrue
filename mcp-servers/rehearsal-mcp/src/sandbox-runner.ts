@@ -8,8 +8,12 @@ import {
   UnknownExecutionConfigError,
 } from '../../../core/errors.js';
 
-let activeAppProcess: ChildProcess | null = null;
+const sessionProcesses = new Map<string, ChildProcess>();
 let currentAppPort: number = 8955;
+
+export function getCurrentAppPort(): number {
+  return currentAppPort;
+}
 
 export async function stageMigrationDiff({
   targetDir,
@@ -93,7 +97,41 @@ export function resolveStartupCommand(targetDir: string, explicitCommand?: strin
   ]);
 }
 
+/**
+ * Filter out sensitive environment variables to prevent sandbox leakages.
+ */
+function createSanitizedEnv(customEnv: Record<string, string> = {}): Record<string, string> {
+  const allowedKeys = new Set([
+    'PATH',
+    'HOME',
+    'USER',
+    'TMPDIR',
+    'NODE_ENV',
+    'PORT',
+    'TERM',
+    'SHELL',
+    'LANG',
+    'LC_ALL',
+    'TZ',
+    'PWD',
+  ]);
+
+  const sanitized: Record<string, string> = {};
+  for (const [key, value] of Object.entries(process.env)) {
+    if (value !== undefined && allowedKeys.has(key)) {
+      sanitized[key] = value;
+    }
+  }
+
+  // Explicitly apply caller-provided env without leaking parent process secrets
+  return {
+    ...sanitized,
+    ...customEnv,
+  };
+}
+
 export async function startSandboxApp({
+  sessionId = 'default',
   targetDir,
   port = 8955,
   env = {},
@@ -101,6 +139,7 @@ export async function startSandboxApp({
   healthCheckPath = '/health',
   timeoutMs = 10000,
 }: {
+  sessionId?: string;
   targetDir: string;
   port?: number;
   env?: Record<string, string>;
@@ -108,18 +147,19 @@ export async function startSandboxApp({
   healthCheckPath?: string;
   timeoutMs?: number;
 }): Promise<{ status: string; port: number; pid: number; command: string }> {
-  // Stop any previously running process
-  if (activeAppProcess && !activeAppProcess.killed) {
-    activeAppProcess.kill('SIGTERM');
+  // Stop previously running process for this session if active
+  const existingProcess = sessionProcesses.get(sessionId);
+  if (existingProcess && !existingProcess.killed) {
+    existingProcess.kill('SIGTERM');
     await new Promise(r => setTimeout(r, 200));
+    sessionProcesses.delete(sessionId);
   }
 
   currentAppPort = port;
-  const mergedEnv = {
-    ...process.env,
+  const mergedEnv = createSanitizedEnv({
     PORT: String(port),
     ...env,
-  };
+  });
 
   const { binary, args } = resolveStartupCommand(targetDir, startCommand);
   const commandStr = `${binary} ${args.join(' ')}`;
@@ -139,9 +179,10 @@ export async function startSandboxApp({
 
   child.on('exit', (code, signal) => {
     earlyExit = { code, signal };
+    sessionProcesses.delete(sessionId);
   });
 
-  activeAppProcess = child;
+  sessionProcesses.set(sessionId, child);
 
   // Poll for health check
   const deadline = Date.now() + timeoutMs;
@@ -149,10 +190,11 @@ export async function startSandboxApp({
   const healthUrl = `http://127.0.0.1:${port}${healthCheckPath}`;
 
   while (Date.now() < deadline) {
-    if (earlyExit !== null) {
+    const exited: any = earlyExit;
+    if (exited !== null) {
       throw new SandboxStartupError(
-        `Process exited prematurely during startup with code ${earlyExit.code}`,
-        earlyExit.code,
+        `Process exited prematurely during startup with code ${exited.code}`,
+        exited.code,
         stderrBuffer.slice(-1000)
       );
     }
@@ -170,6 +212,7 @@ export async function startSandboxApp({
 
   if (!healthy) {
     child.kill('SIGKILL');
+    sessionProcesses.delete(sessionId);
     throw new SandboxHealthcheckTimeoutError(port, timeoutMs, healthUrl);
   }
 
@@ -181,9 +224,19 @@ export async function startSandboxApp({
   };
 }
 
-export function stopSandboxApp() {
-  if (activeAppProcess && !activeAppProcess.killed) {
-    activeAppProcess.kill('SIGTERM');
-    activeAppProcess = null;
+export function stopSandboxApp(sessionId?: string) {
+  if (sessionId) {
+    const child = sessionProcesses.get(sessionId);
+    if (child && !child.killed) {
+      child.kill('SIGTERM');
+    }
+    sessionProcesses.delete(sessionId);
+  } else {
+    for (const [sid, child] of sessionProcesses.entries()) {
+      if (child && !child.killed) {
+        child.kill('SIGTERM');
+      }
+    }
+    sessionProcesses.clear();
   }
 }

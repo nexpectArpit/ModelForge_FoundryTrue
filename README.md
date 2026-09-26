@@ -1,11 +1,15 @@
-# ModelForge
+# ModelForge - Migration Rehearsal Agent
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
 [![TrueForge](https://img.shields.io/badge/TrueForge-Agent%20Harness-dfff57?style=for-the-badge&labelColor=07100d)](https://github.com/truefoundry/trueforge)
 [![TypeScript](https://img.shields.io/badge/TypeScript-Strict%20Contracts-7fa4ff?style=for-the-badge&labelColor=07100d)](https://www.typescriptlang.org/)
 [![Model Context Protocol](https://img.shields.io/badge/MCP-Streamable%20HTTP-65e6b2?style=for-the-badge&labelColor=07100d)](https://modelcontextprotocol.io/)
 
 > **Autonomous AI Model Migration Rehearsal Agent built on TrueForge.**  
 > ModelForge safely migrates an AI application from one foundation model to another by inspecting the actual codebase, testing candidate changes in an isolated sandbox against deterministic workloads, catching regressions, autonomously diagnosing failures, engineering hybrid remediations, and strictly halting at a human approval boundary before any production routing mutation.
+
+**[Solution Writeup](./SOLUTION.md)** - Problem statement, architecture, TrueForge usage, real vs. mocked, and known limits.  
+**[3-Minute Demo Script & Video Runbook](./DEMO_SCRIPT.md)** - Step-by-step terminal setup, UI prompt, and video narration guide.
 
 ---
 
@@ -19,7 +23,7 @@ flowchart TD
         TF -->|Streamable HTTP MCP| RMCP[Rehearsal MCP Server :8951]
         TF -->|Streamable HTTP MCP| GMCP[Gateway MCP Server :8952]
         
-        RMCP -->|1. Inspect AST| BaseApp[Baseline Application :8950]
+        RMCP -->|1. Pattern Scan Repo| BaseApp[Baseline Application :8950]
         RMCP -->|2. Record Ground Truth| BaseApp
         RMCP -->|3. Copy-on-Write Clone| Sandbox[Isolated Sandbox :8955]
         RMCP -->|4. Differential Eval| Sandbox
@@ -29,7 +33,7 @@ flowchart TD
     GMCP -->|6. Prepare Canary Manifest| Gate{TrueForge Human Approval Gate}
     Gate -->|Allowed by Operator| Auth[Issue Signed Approval Artifact]
     Auth --> GMCP
-    GMCP -->|7. Mutate Routing Table| Gateway[Production AI Gateway]
+    GMCP -->|7. Mutate Routing Table| Gateway[Simulated AI Gateway]
     GMCP -->|8. Verify Live SHA| Gateway
     Gateway --> Audit[(SQLite WAL Audit Store)]
 ```
@@ -51,134 +55,62 @@ flowchart TD
 
 ---
 
-## 3. Complete Step-by-Step Quickstart (From Scratch)
+## 3. Quickstart (From Scratch)
 
 ### Prerequisites
-* **Node.js**: $\ge 22.0.0$ (for native `node:sqlite`)
-* **pnpm**: $\ge 11.0.0$
+* **Node.js** >= 22.0.0 (for native `node:sqlite`)
+* **pnpm** >= 11.0.0
 
----
+### Setup
 
-### Step 1: Environment Setup & Dependencies
-
-Clone the repository and install all dependencies:
 ```bash
-cd modelforge
+git clone <repo-url> && cd modelforge
+cp .env.example .env          # Edit .env with your API key
 pnpm install
 ```
 
-Create `.env` file in the `modelforge` directory:
-```bash
-cat << 'EOF' > .env
-TRUEFORGE_BASE_URL=http://127.0.0.1:8790
-PORT=8955
+See [`.env.example`](./.env.example) for all configurable provider keys (Groq, NVIDIA, OpenAI, Mistral).
 
-# Provider API Keys (Set at least one)
-GROQ_API_KEY=gsk_...
-NVIDIA_API_KEY=nvapi-...
-OPENAI_API_KEY=sk-...
-
-MODELFORGE_PROVIDER=auto
-TRUEFORGE_MODEL=nvidia/llama-3-2-11b
-EOF
-```
-
----
-
-### Step 2: Start TrueForge Agent Server
-
-Start TrueForge with network policy disabled for local loopback communication:
-```bash
-# Terminal 1: TrueForge Agent Harness
-pnpm trueforge:start
-
-# Or directly using npx:
-# NETWORK_POLICY_ENABLED=false npx -y @truefoundry/trueforge --port 8790
-```
-*TrueForge UI is now reachable at `http://localhost:8790`.*
-
----
-
-### Step 3: Register Model Provider in TrueForge
-
-Register your API provider key in TrueForge. You can do this via the Web UI (`http://localhost:8790/settings`) or via HTTP API:
+### Run
 
 ```bash
-# Register NVIDIA provider (or Groq / OpenAI)
-curl -s -X PUT http://127.0.0.1:8790/api/v1/settings/model-providers \
-  -H "Content-Type: application/json" \
-  -d '{
-    "manifest": {
-      "type": "custom",
-      "name": "nvidia",
-      "base_url": "https://integrate.api.nvidia.com/v1",
-      "auth": { "api_key": "YOUR_NVIDIA_API_KEY" },
-      "models": [
-        {
-          "name": "llama-3-2-11b",
-          "model_id": "meta/llama-3.2-11b-vision-instruct",
-          "properties": { "context_length": 128000, "max_output_tokens": 4096 }
-        }
-      ]
-    }
-  }'
-```
+# Terminal 1 - TrueForge Agent Harness
+nvm use 22 && pnpm trueforge:start
 
----
+# Terminal 2 - ModelForge Microservices (baseline app + MCP servers)
+nvm use 22 && pnpm start:baseline & pnpm start:rehearsal-mcp & pnpm start:gateway-mcp
 
-### Step 4: Start ModelForge Microservices & Daemons
-
-In separate terminal windows (or background jobs), start the baseline app and the two MCP servers:
-
-```bash
-# Terminal 2: Baseline Customer Support Application
-PORT=8950 pnpm start:baseline
-
-# Terminal 3: Rehearsal MCP Server
-PORT=8951 pnpm start:rehearsal-mcp
-
-# Terminal 4: Gateway MCP Server
-PORT=8952 pnpm start:gateway-mcp
+# Terminal 3 - Bootstrap agent with TrueForge
+nvm use 22 && pnpm modelforge:bootstrap
 ```
 
 Verify all services are healthy:
 ```bash
-curl -s http://127.0.0.1:8950/health
-curl -s http://127.0.0.1:8951/health
-curl -s http://127.0.0.1:8952/health
+curl -s http://127.0.0.1:8950/health   # Baseline App
+curl -s http://127.0.0.1:8951/health   # Rehearsal MCP
+curl -s http://127.0.0.1:8952/health   # Gateway MCP
 ```
 
----
+### Run the Migration Rehearsal
 
-### Step 5: Bootstrap the ModelForge Agent
-
-Register the agent definition and MCP server connectors with TrueForge:
-```bash
-# Terminal 5: Bootstrap Agent
-pnpm modelforge:bootstrap
-```
-
-Output:
-```text
-[bootstrap] Connecting to TrueForge at http://127.0.0.1:8790...
-[bootstrap] TrueForge is running! API Version: 0.2.1
-[bootstrap] Registering MCP connector: rehearsal-mcp -> http://127.0.0.1:8951/mcp
-[bootstrap] Registering MCP connector: gateway-mcp -> http://127.0.0.1:8952/mcp
-[bootstrap] Registering agent: modelforge-migration-commander
-[bootstrap] Agent registered successfully! ID: 01m3ebdry41nstcgm229gp8qff
-[bootstrap] ModelForge is fully bootstrapped and ready.
-```
-
----
-
-### Step 6: Run the Live Migration Rehearsal
-
-#### Option A: Interactive Run via TrueForge Web UI (Recommended)
+#### Option A: TrueForge Web UI (Recommended)
 1. Open `http://localhost:8790` in your browser.
-2. Click **New Chat** $\rightarrow$ select agent **`modelforge-migration-commander`**.
+2. Click **New Chat** -> select agent **`modelforge-migration-commander`**.
 3. Send prompt:
    ```text
    Please execute a migration rehearsal for "demo-apps/customer-support-app".
+   You must call each tool strictly one at a time sequentially:
+   1. Inspect the repository AI usage using repo_path "demo-apps/customer-support-app".
+   2. Establish baseline evidence against "http://127.0.0.1:8950".
+   3. Generate a migration plan for candidate target model "model-b".
+   4. Stage candidate model "model-b" using repo_path "demo-apps/customer-support-app".
+   5. Run the candidate application in the sandbox using sandbox_run_app.
+   6. Run the deterministic benchmark using run_deterministic_benchmark.
+   7. Call compare_rehearsals to compare candidate vs baseline.
+   8. If regressions detected, call diagnose_failures and apply_sandbox_remediation, then re-test.
+   9. When comparison passes, call prepare_canary_manifest with evaluation proof.
+   10. Call apply_production_routing with canary_id.
+   11. After approval, verify with verify_gateway_routing.
    ```
 4. Watch the agent execute each discrete MCP tool live on screen.
 5. When the agent reaches `apply_production_routing`, TrueForge will display the **`[Allow]` / `[Deny]`** approval gate.
@@ -195,15 +127,26 @@ pnpm modelforge:run --auto-approve
 
 ---
 
-## 4. Discrete MCP Tool Reference
+## 4. Live TrueForge Execution Evidence & Generative UI
 
-ModelForge exposes 11 discrete MCP tools split across two namespaced MCP servers:
+ModelForge includes authentic, reproducible live execution evidence recorded from real TrueForge SSE sessions (`npx @truefoundry/trueforge` at `:8790`):
+
+* **[Live Generative UI Operator Dashboard](./evidence/trueforge-live/operator_dashboard_evidence.md)** - Complete 6-panel live rehearsal dashboard (Timeline, Evaluation Differential Matrix, Root Cause Diagnosis, Sandbox Isolation, Canary Approval Gate, and Live Gateway SHA Verification).
+* **[Ordered Tool Call Transcript](./evidence/trueforge-live/session_transcript.json)** - 13 discrete sequential MCP calls with full JSON inputs and outputs.
+* **[Authoritative Audit Receipt](./evidence/trueforge-live/audit_receipt.json)** - Cryptographically signed final audit receipt (`receipt_sha: 91043e69...`).
+* **[Service Health Checks](./evidence/trueforge-live/health_checks.json)** - Snapshot of TrueForge, Rehearsal MCP, Gateway MCP, and Baseline App.
+
+---
+
+## 5. Discrete MCP Tool Reference
+
+ModelForge exposes **15 discrete MCP tools** split across two namespaced MCP servers:
 
 ### Rehearsal MCP Server (`http://127.0.0.1:8951/mcp`)
 
 | Tool Name | Input Schema | Description |
 |---|---|---|
-| `repo_inspect_ai_usage` | `repo_path` | AST scan of target repository mapping frameworks, coupling sites, and tool schemas. |
+| `repo_inspect_ai_usage` | `repo_path` | Static pattern scan of repository mapping SDKs, model references, and tool schemas. |
 | `establish_baseline` | `endpoint_url` | Runs 15-case benchmark against unmodified baseline app to establish empirical ground truth. |
 | `generate_migration_plan` | `source_model`, `target_model` | Synthesizes migration plan with risk rating, code diffs, and acceptance criteria. |
 | `stage_code_migration` | `repo_path`, `active_model` | Clones app into an isolated sandbox (`.modelforge-sandboxes/`) and applies model patch. |
@@ -212,6 +155,7 @@ ModelForge exposes 11 discrete MCP tools split across two namespaced MCP servers
 | `compare_rehearsals` | `session_id` | Differential matrix comparison calculating accuracy shift, cost savings, and regressions. |
 | `diagnose_failures` | `session_id` | Failure taxonomy diagnosis returning root cause classification and recommended strategy. |
 | `apply_sandbox_remediation` | `strategy` | Applies sandbox remediation patch (e.g. `hybrid_routing`) to sandbox files. |
+| `abort_migration` | `reason` | Explicitly halts and aborts migration when candidate is incompatible or unsupported. |
 | `get_session_state` | `session_id` | Queries current durable state machine state from SQLite. |
 
 ### Gateway MCP Server (`http://127.0.0.1:8952/mcp`)
@@ -225,16 +169,31 @@ ModelForge exposes 11 discrete MCP tools split across two namespaced MCP servers
 
 ---
 
-## 5. Automated Test Suite
+## 6. Automated Test Suite
 
-Run unit and contract verification tests:
 ```bash
-pnpm test
+nvm use 22 && pnpm test    # 180 tests across 15 files (100% PASS)
+nvm use 22 && pnpm typecheck  # Strict TypeScript check (0 errors)
 ```
 
 Tests validate:
 * Specialist contracts and JSON schemas
-* State machine transitions and illegal sequence rejection
-* Sandbox filesystem copy-on-write isolation
+* State machine transitions, fail-closed approval boundaries, and illegal sequence rejection
+* Sandbox filesystem copy-on-write isolation (zero writes to origin)
 * Deterministic benchmark evaluations and failure taxonomy classification
 * Cryptographic approval artifact verification and signature tampering protection
+
+---
+
+## 7. Scope & Known Boundaries
+
+> **Honest Scope Notice**: ModelForge currently supports locally runnable AI apps with HTTP evaluation endpoints. The demo proves the end-to-end migration rehearsal loop. Arbitrary repository support is future work.
+
+See [**SOLUTION.md**](./SOLUTION.md) for full architectural disclosure on what is real vs. simulated.
+
+---
+
+## License
+
+[MIT](./LICENSE)
+

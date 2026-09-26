@@ -41,11 +41,6 @@ interface FailurePattern {
   buildStrategyDetails(regressions: EvaluationReport['regressions'], report: EvaluationReport, context: DiagnosisContext): Record<string, unknown>;
 }
 
-/** Context passed to failure patterns for data-driven details */
-interface DiagnosisContext {
-  sourceModel: string;
-  targetModel: string;
-}
 
 const FAILURE_PATTERNS: FailurePattern[] = [
   // ── Tool Calling Failures ──

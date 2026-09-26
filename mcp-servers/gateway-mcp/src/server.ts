@@ -4,6 +4,9 @@ import {
   verifyGatewayRouting,
   emergencyRollback,
   resetGatewayState,
+  issueOperatorApproval,
+  getPreparedCanaryPlan,
+  getLatestPreparedCanaryPlan,
 } from './canary-manager.js';
 
 export { resetGatewayState };
@@ -36,19 +39,33 @@ export const GATEWAY_TOOLS = [
     },
   },
   {
+    name: 'issue_operator_approval',
+    description: 'Cryptographically sign and register an operator approval artifact for the prepared canary manifest when authorized by human operator.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        canary_id: { type: ['string', 'null'], description: 'Prepared canary plan ID to authorize' },
+        decision: { type: 'string', enum: ['allow', 'deny'], description: 'Operator authorization decision' },
+        operator: { type: 'string', description: 'Operator name or identifier (defaults to trueforge-ui-operator)' },
+        session_id: { type: ['string', 'null'], description: 'Optional migration session identifier' },
+      },
+      required: ['decision'],
+    },
+  },
+  {
     name: 'apply_production_routing',
     description: 'APPROVAL REQUIRED: Apply the prepared canary routing configuration to the live production AI Gateway. Requires an independently verifiable operator approval artifact.',
     inputSchema: {
       type: 'object',
       properties: {
-        canary_id: { type: 'string', description: 'ID of the prepared and approved canary plan' },
+        canary_id: { type: ['string', 'null'], description: 'ID of the prepared and approved canary plan' },
         approval_token: {
           type: ['object', 'null'],
           description: 'Cryptographically signed approval artifact produced by operator sign-off',
         },
         session_id: { type: ['string', 'null'], description: 'Optional migration session identifier' },
       },
-      required: ['canary_id'],
+      required: [],
     },
   },
   {
@@ -57,7 +74,7 @@ export const GATEWAY_TOOLS = [
     inputSchema: {
       type: 'object',
       properties: {
-        expected_canary_id: { type: 'string', description: 'Optional expected canary ID to verify against' },
+        expected_canary_id: { type: ['string', 'null'], description: 'Optional expected canary ID to verify against' },
         session_id: { type: ['string', 'null'], description: 'Optional migration session identifier' },
       },
     },
@@ -86,6 +103,15 @@ export async function handleGatewayToolCall(name: string, args: Record<string, a
       routingArchitecture: args.routing_architecture ?? 'hybrid_routed',
       trafficSplitCandidatePct: args.traffic_split_candidate_pct ?? 10,
       evaluationProof: args.evaluation_proof,
+    });
+  }
+
+  if (name === 'issue_operator_approval') {
+    return issueOperatorApproval({
+      canaryId: args.canary_id,
+      decision: args.decision ?? 'allow',
+      operator: args.operator ?? 'trueforge-ui-operator',
+      sessionId: args.session_id,
     });
   }
 

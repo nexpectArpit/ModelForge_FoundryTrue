@@ -1,9 +1,9 @@
-import { canonicalEvaluationEngine, CreateTicketSchema, QueryRefundStatusSchema } from '../../../../core/evaluation/index.js';
+import { runEvaluation, CreateTicketSchema, QueryRefundStatusSchema } from '../../../../core/index.js';
 
 export { CreateTicketSchema, QueryRefundStatusSchema };
 
 export interface EvaluationResult {
-  contract_version: "1.0";
+  contract_version: "2.0";
   eval_run_id: string;
   candidate_id: string;
   timestamp: string;
@@ -45,21 +45,25 @@ export async function runDeterministicEvaluation({
   candidateId: string;
   testSuitePath?: string;
 }): Promise<EvaluationResult> {
-  const report = await canonicalEvaluationEngine.run({
+  const report = await runEvaluation({
     endpointUrl,
     candidateId,
     testSuitePath,
   });
 
   return {
-    contract_version: "1.0",
+    contract_version: "2.0",
     eval_run_id: report.eval_run_id,
     candidate_id: report.candidate_id,
     timestamp: report.timestamp,
     test_suite_id: report.test_suite_id,
     total_cases: report.total_cases,
     passed_cases: report.passed_cases,
-    quality: report.quality,
+    quality: {
+      score: report.quality.score,
+      threshold: report.quality.threshold,
+      passed: report.quality.passed,
+    },
     latency: report.latency,
     cost: report.cost,
     regressions: report.regressions,

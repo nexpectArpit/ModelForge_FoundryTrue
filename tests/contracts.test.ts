@@ -28,8 +28,8 @@ describe('Agent Contracts v2', () => {
 
   it('has contract templates for all roles', () => {
     for (const role of SPECIALIST_ROLES) {
-      expect(SPECIALIST_CONTRACTS[role]).toBeDefined();
-      expect(typeof SPECIALIST_CONTRACTS[role]).toBe('string');
+      expect((SPECIALIST_CONTRACTS as any)[role]).toBeDefined();
+      expect(typeof (SPECIALIST_CONTRACTS as any)[role]).toBe('string');
     }
   });
 });
@@ -174,7 +174,7 @@ describe('correlateReports', () => {
 
     const result = correlateReports(reports);
     expect(result.ready).toBe(true);
-    expect(result.correlations.strategy).toBe('hybrid_routing');
+    expect(result.correlations?.strategy).toBe('hybrid_routing');
   });
 
   it('detects strategy mismatch between diagnostician and planner', () => {

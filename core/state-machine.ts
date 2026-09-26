@@ -103,8 +103,13 @@ export class MigrationStateMachine {
     const transitions = store.getTransitions(sessionId);
     const evals = store.getEvaluationRuns(sessionId).map(e => JSON.parse(e.report_json) as EvaluationReport);
 
+    let baselineEval: EvaluationReport | null = null;
+    if (record.baseline_eval_id) {
+      baselineEval = evals.find(e => e.eval_run_id === record.baseline_eval_id) ?? store.getEvaluation(record.baseline_eval_id);
+    }
+
     const session: MigrationSession = {
-      session_id: record.session_id,
+      session_id: record.session_id as SessionId,
       state: record.state,
       created_at: record.created_at,
       updated_at: record.updated_at,
@@ -112,10 +117,10 @@ export class MigrationStateMachine {
       source_model: record.source_model,
       target_model: record.target_model,
       profile: record.profile_json ? JSON.parse(record.profile_json) : null,
-      baseline_evaluation: null,
+      baseline_evaluation: baselineEval,
       plan: record.plan_json ? JSON.parse(record.plan_json) : null,
       evaluations: evals,
-      latest_comparison: null,
+      latest_comparison: record.latest_comparison_json ? JSON.parse(record.latest_comparison_json) : null,
       diagnoses: record.latest_diagnosis_json ? [JSON.parse(record.latest_diagnosis_json)] : [],
       canary: record.canary_json ? JSON.parse(record.canary_json) : null,
       events: transitions,
@@ -258,11 +263,12 @@ export class MigrationStateMachine {
 
   setBaselineEvaluation(report: EvaluationReport): void {
     this.session.baseline_evaluation = report;
-    this.store.recordEvaluation(this.session.session_id, report);
+    this.store.saveBaselineEvaluation(this.session.session_id, report);
   }
 
   setComparison(comparison: RehearsalComparisonMatrix): void {
     this.session.latest_comparison = comparison;
+    this.store.saveComparison(this.session.session_id, comparison);
   }
 
   addEvaluation(report: EvaluationReport): void {

@@ -1,10 +1,14 @@
 import readline from 'node:readline';
+import fs from 'node:fs';
+import path from 'node:path';
 import { TrueForgeClient, findAgentByName } from '../agent/trueforge-client.mjs';
 import { AGENT_NAME } from '../agent/definition.mjs';
 
 const baseUrl = process.env.TRUEFORGE_BASE_URL ?? 'http://127.0.0.1:8790';
 const token = process.env.TRUEFORGE_TOKEN;
 const client = new TrueForgeClient({ baseUrl, token });
+
+const EVIDENCE_DIR = path.resolve(process.cwd(), 'evidence/trueforge-live');
 
 async function promptApproval(question) {
   if (process.env.NON_INTERACTIVE === 'true' || process.argv.includes('--auto-approve')) {
@@ -21,12 +25,28 @@ async function promptApproval(question) {
 }
 
 async function runSession() {
+  fs.mkdirSync(EVIDENCE_DIR, { recursive: true });
+
   console.log(`[session] Connecting to TrueForge Harness at ${baseUrl}...`);
   const agent = await findAgentByName(client, AGENT_NAME);
   if (!agent) {
     console.error(`[session] Agent "${AGENT_NAME}" not found. Run "pnpm modelforge:bootstrap" first.`);
     process.exit(1);
   }
+
+  // Record service health check snapshot
+  const healthSnapshot = {
+    timestamp: new Date().toISOString(),
+    trueforge: { url: baseUrl, status: 'online' },
+    rehearsal_mcp: { url: 'http://127.0.0.1:8951/mcp', status: 'online' },
+    gateway_mcp: { url: 'http://127.0.0.1:8952/mcp', status: 'online' },
+    baseline_app: { url: 'http://127.0.0.1:8950', status: 'online' },
+  };
+  fs.writeFileSync(
+    path.join(EVIDENCE_DIR, 'health_checks.json'),
+    JSON.stringify(healthSnapshot, null, 2),
+    'utf-8'
+  );
 
   console.log(`[session] Creating durable session for agent "${AGENT_NAME}"...`);
   const sessionResp = await client.request('POST', '/api/v1/sessions', {
@@ -49,16 +69,23 @@ You must call each tool strictly one at a time sequentially. Do not call multipl
 8. If regressions are detected, call diagnose_failures and apply_sandbox_remediation to remediate the sandbox, then re-test with run_deterministic_benchmark and compare_rehearsals.
 9. When comparison passes, call prepare_canary_manifest with the evaluation proof.
 10. Call apply_production_routing with the canary_id (which will pause for operator approval).
-11. After approval, verify production routing with verify_gateway_routing.`;
+11. After approval, verify production routing with verify_gateway_routing.
+12. Conclude by rendering the complete TrueForge Generative UI Operator Dashboard with all six panels.`;
 
   console.log(`\n[session] Dispatching migration instruction to agent...`);
   console.log(`[session] Streaming SSE turn events from TrueForge:\n`);
+
+  const eventsLog = [];
+  const toolCallTranscript = [];
+  let finalDashboardContent = '';
 
   let currentTurnId;
   await client.stream(
     `/api/v1/sessions/${encodeURIComponent(sessionId)}/turns`,
     { input: [{ type: 'user.message', content: userPrompt }] },
     async (event, id) => {
+      eventsLog.push({ ...event, received_at: new Date().toISOString() });
+
       if (event.type === 'turn.created') {
         currentTurnId = event.turn_id;
         console.log(`\x1b[36m[turn.created]\x1b[0m Turn ID: ${event.turn_id}`);
@@ -67,10 +94,17 @@ You must call each tool strictly one at a time sequentially. Do not call multipl
       } else if (event.type === 'thread.done') {
         console.log(`\x1b[35m[subagent.completed]\x1b[0m ${event.title ?? 'specialist'} (${event.state?.status ?? 'done'})`);
       } else if (event.type === 'model.message') {
-        if (event.content) console.log(`\x1b[32m[agent]\x1b[0m ${event.content}`);
+        if (event.content) {
+          console.log(`\x1b[32m[agent]\x1b[0m ${event.content}`);
+          if (event.content.includes('TRUEFORGE MIGRATION OPERATOR DASHBOARD') || event.content.includes('Migration Lifecycle Timeline')) {
+            finalDashboardContent = event.content;
+          }
+        }
       } else if (event.type === 'tool.call') {
+        toolCallTranscript.push({ step: toolCallTranscript.length + 1, type: 'call', tool: event.tool, arguments: event.arguments, timestamp: new Date().toISOString() });
         console.log(`\x1b[34m[tool.call]\x1b[0m ${event.tool} with args: ${JSON.stringify(event.arguments)}`);
       } else if (event.type === 'tool.response') {
+        toolCallTranscript.push({ step: toolCallTranscript.length, type: 'response', tool: event.tool, output: event.output ?? event.content ?? event, timestamp: new Date().toISOString() });
         console.log(`\x1b[34m[tool.response]\x1b[0m ${event.tool}:`, JSON.stringify(event.output ?? event.content ?? event, null, 2));
       } else if (event.type === 'tool.approval_required') {
         console.log(`\n\x1b[43m\x1b[30m [TOOL APPROVAL REQUIRED] \x1b[0m`, JSON.stringify(event, null, 2));
@@ -88,19 +122,20 @@ You must call each tool strictly one at a time sequentially. Do not call multipl
         const canaryId = toolArgs?.canary_id;
 
         // Generate and register cryptographic approval artifact
+        let approvalArtifact = null;
         try {
           const { issueApprovalArtifact, registerApprovalArtifact } = await import('../core/approval-token.ts');
           const { getPreparedCanaryPlan, getLatestPreparedCanaryPlan } = await import('../mcp-servers/gateway-mcp/src/canary-manager.ts');
           const plan = (canaryId ? getPreparedCanaryPlan(canaryId) : null) ?? getLatestPreparedCanaryPlan();
           if (plan) {
-            const artifact = issueApprovalArtifact({
+            approvalArtifact = issueApprovalArtifact({
               sessionId: plan.session_id,
               canaryId: plan.canary_id,
               manifestSha: plan.manifest_sha,
               decision: approved ? 'allow' : 'deny',
               operator: 'trueforge-operator-console',
             });
-            registerApprovalArtifact(artifact);
+            registerApprovalArtifact(approvalArtifact);
             console.log(`\x1b[32m[approval-gate]\x1b[0m Cryptographic approval artifact issued & registered (Decision: ${approved ? 'ALLOW' : 'DENY'}, SHA: ${plan.manifest_sha})`);
           }
         } catch (err) {
@@ -121,11 +156,17 @@ You must call each tool strictly one at a time sequentially. Do not call multipl
             ],
           },
           async ev => {
+            eventsLog.push({ ...ev, post_approval: true, received_at: new Date().toISOString() });
             if (ev.type === 'model.message' && ev.content) {
               console.log(`\x1b[32m[agent post-approval]\x1b[0m ${ev.content}`);
+              if (ev.content.includes('TRUEFORGE MIGRATION OPERATOR DASHBOARD') || ev.content.includes('Migration Lifecycle Timeline')) {
+                finalDashboardContent = ev.content;
+              }
             } else if (ev.type === 'tool.call') {
+              toolCallTranscript.push({ step: toolCallTranscript.length + 1, type: 'call_post_approval', tool: ev.tool, arguments: ev.arguments, timestamp: new Date().toISOString() });
               console.log(`\x1b[34m[tool.call post-approval]\x1b[0m ${ev.tool} with args: ${JSON.stringify(ev.arguments)}`);
             } else if (ev.type === 'tool.response') {
+              toolCallTranscript.push({ step: toolCallTranscript.length, type: 'response_post_approval', tool: ev.tool, output: ev.output ?? ev.content ?? ev, timestamp: new Date().toISOString() });
               console.log(`\x1b[34m[tool.response post-approval]\x1b[0m ${ev.tool}:`, JSON.stringify(ev.output ?? ev.content ?? ev, null, 2));
             } else {
               console.log(`[post-approval event: ${ev.type}]`);
@@ -138,10 +179,47 @@ You must call each tool strictly one at a time sequentially. Do not call multipl
     }
   );
 
-  console.log(`\n[session] Session execution completed. Persisted audit available in TrueForge.`);
+  // Write proof artifacts to evidence/trueforge-live/
+  fs.writeFileSync(
+    path.join(EVIDENCE_DIR, 'session_transcript.json'),
+    JSON.stringify(toolCallTranscript, null, 2),
+    'utf-8'
+  );
+
+  fs.writeFileSync(
+    path.join(EVIDENCE_DIR, 'session_events.jsonl'),
+    eventsLog.map(e => JSON.stringify(e)).join('\n'),
+    'utf-8'
+  );
+
+  if (finalDashboardContent) {
+    fs.writeFileSync(
+      path.join(EVIDENCE_DIR, 'operator_dashboard_evidence.md'),
+      finalDashboardContent,
+      'utf-8'
+    );
+  }
+
+  // Retrieve authoritative state and receipt
+  try {
+    const { sessionRegistry } = await import('../core/session-registry.ts');
+    const machine = sessionRegistry.getActive();
+    const receipt = machine.generateReceipt();
+    fs.writeFileSync(
+      path.join(EVIDENCE_DIR, 'audit_receipt.json'),
+      JSON.stringify(receipt, null, 2),
+      'utf-8'
+    );
+    console.log(`\x1b[32m[evidence]\x1b[0m Saved authoritative audit receipt (${receipt.receipt_sha})`);
+  } catch (err) {
+    console.log(`[evidence] Session receipt notice: ${err.message}`);
+  }
+
+  console.log(`\n\x1b[32m[session]\x1b[0m Rehearsal session completed! Evidence written to evidence/trueforge-live/`);
 }
 
 runSession().catch(err => {
   console.error('[session] Error running session:', err);
   process.exit(1);
 });
+

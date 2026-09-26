@@ -481,8 +481,6 @@ register({
   metadata: { hosted_on: ['groq', 'together', 'fireworks'] },
 });
 
-// ── Mistral Models ──
-
 register({
   model_id: 'mistral-large',
   provider: 'mistral',
@@ -505,6 +503,56 @@ register({
   typical_p95_latency_ms: 400,
   knowledge_cutoff: '2024-11-01',
   metadata: {},
+});
+
+// ── ModelForge Demo Models ──
+
+register({
+  model_id: 'model-a',
+  provider: 'incumbent',
+  display_name: 'Model A (Baseline Frontier)',
+  context_window: 128_000,
+  max_output_tokens: 4_096,
+  tool_calling: {
+    supported: true,
+    parallel_tool_calls: true,
+    max_tools: 16,
+    strict_schema_adherence: 'full',
+  },
+  structured_output: {
+    modes: ['json_mode', 'json_schema'],
+    schema_adherence: 'full',
+  },
+  streaming: true,
+  vision: false,
+  cost: { input_per_1m_tokens: 3.00, output_per_1m_tokens: 15.00 },
+  typical_p95_latency_ms: 780,
+  knowledge_cutoff: '2024-10-01',
+  metadata: { tier: 'frontier' },
+});
+
+register({
+  model_id: 'model-b',
+  provider: 'candidate',
+  display_name: 'Model B (Cost-Efficient Candidate)',
+  context_window: 128_000,
+  max_output_tokens: 4_096,
+  tool_calling: {
+    supported: true,
+    parallel_tool_calls: false,
+    max_tools: 8,
+    strict_schema_adherence: 'partial',
+  },
+  structured_output: {
+    modes: ['json_mode'],
+    schema_adherence: 'partial',
+  },
+  streaming: true,
+  vision: false,
+  cost: { input_per_1m_tokens: 0.15, output_per_1m_tokens: 0.60 },
+  typical_p95_latency_ms: 290,
+  knowledge_cutoff: '2024-10-01',
+  metadata: { tier: 'lightweight' },
 });
 
 // ─── Registry API ────────────────────────────────────────────────────────────

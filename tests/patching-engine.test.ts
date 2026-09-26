@@ -148,7 +148,6 @@ describe('Canonical Patch Engine (Phase B)', () => {
   it('applies complete migration plan end-to-end via canonical entrypoint', () => {
     const plan: MigrationPlan = {
       contract_version: '2.0',
-      plan_id: 'plan-e2e-1' as any,
       session_id: 'session-e2e' as any,
       created_at: new Date().toISOString(),
       source_model: 'model-a',

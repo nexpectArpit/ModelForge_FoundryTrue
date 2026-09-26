@@ -256,8 +256,9 @@ export interface AcceptanceCriterion {
 export interface MigrationPlan {
   contract_version: '2.0';
   session_id: SessionId;
+  plan_id?: string;
   /** Human-readable plan title */
-  title: string;
+  title?: string;
   /** Source model being replaced */
   source_model: string;
   /** Target model to migrate to */
@@ -272,25 +273,31 @@ export interface MigrationPlan {
   acceptance_criteria: AcceptanceCriterion[];
   /** Estimated risk level of the overall migration */
   risk_assessment: 'low' | 'medium' | 'high' | 'critical';
+  /** Estimated cost savings percentage */
+  estimated_cost_savings_pct?: number;
   /** When this plan was generated */
-  planned_at: string;
+  planned_at?: string;
+  created_at?: string;
 }
 
 // ─── Evaluation Report ───────────────────────────────────────────────────────
 
 /** Result of a single benchmark test case */
+/** Result of a single benchmark test case */
 export interface TestCaseResult {
   case_id: string;
-  category: 'qa' | 'summarize' | 'extract' | 'tool';
+  category: string;
   passed: boolean;
   /** Latency in milliseconds */
   latency_ms: number;
   /** Estimated cost of this single invocation */
-  estimated_cost: number;
+  estimated_cost?: number;
   /** If failed, the specific failure reason */
-  failure_reason: string | null;
+  failure_reason?: string | null;
+  /** Error message if any */
+  error?: string;
   /** Raw model output (for audit) */
-  raw_response_summary: string;
+  raw_response_summary?: string;
 }
 
 /** Aggregate quality metrics for an evaluation run */
@@ -299,7 +306,7 @@ export interface QualityMetrics {
   threshold: number;
   passed: boolean;
   /** Per-category breakdown */
-  by_category: Record<string, { passed: number; total: number; score: number }>;
+  by_category?: Record<string, { passed: number; total: number; score: number }>;
 }
 
 /** Aggregate latency metrics */
@@ -325,7 +332,7 @@ export interface Regression {
   category: string;
   error: string;
   /** Severity classification */
-  severity: 'critical' | 'major' | 'minor';
+  severity?: 'critical' | 'major' | 'minor';
 }
 
 /** Complete evaluation report — immutable once generated */
@@ -637,8 +644,10 @@ export interface DurableSessionRecord {
   remediation_round: number;
   max_remediation_rounds: number;
   profile_json: string | null;
+  baseline_eval_id: string | null;
   plan_json: string | null;
   latest_eval_id: string | null;
+  latest_comparison_json: string | null;
   latest_diagnosis_json: string | null;
   canary_id: string | null;
   canary_json: string | null;

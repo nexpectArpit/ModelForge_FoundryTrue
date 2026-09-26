@@ -23,7 +23,7 @@ import { MigrationStateMachine } from './state-machine.js';
 import { WorkspaceSandbox } from './workspace-sandbox.js';
 import { analyzeRepository } from './repository-analyzer.js';
 import { generateMigrationPlan } from './migration-planner.js';
-import { runEvaluation, type EvaluationConfig, type SchemaValidator } from './evaluation-engine.js';
+import { runEvaluation } from './evaluation/index.js';
 import { diagnoseFailures } from './failure-diagnostician.js';
 import {
   InvalidTransitionError,
@@ -98,7 +98,7 @@ export interface OrchestratorOptions {
   /** Baseline cost per 1k requests */
   baselineCostPer1k?: number;
   /** Optional schema validator */
-  schemaValidator?: SchemaValidator;
+  schemaValidator?: (schema: Record<string, unknown>, payload: unknown) => boolean;
   /** Event handler for progress reporting */
   onEvent?: EventHandler;
   /** Sandbox root directory */

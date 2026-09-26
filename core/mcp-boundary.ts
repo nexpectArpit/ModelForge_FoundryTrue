@@ -18,7 +18,7 @@ import { MCPBoundaryError } from './errors.js';
 
 // ─── Validated MCP Input Schemas ─────────────────────────────────────────────
 
-const OptionalSessionId = z.unknown().optional().transform(val => {
+const OptionalSessionId = z.preprocess(val => {
   if (typeof val === 'string' && val.length > 0) {
     const lower = val.toLowerCase();
     if (
@@ -34,7 +34,7 @@ const OptionalSessionId = z.unknown().optional().transform(val => {
     return val;
   }
   return undefined;
-});
+}, z.string().optional());
 
 export const RepoInspectInput = z.object({
   repo_path: z.string().min(1, 'repo_path is required'),
@@ -96,6 +96,11 @@ export const ApplyRemediationInput = z.object({
       'abort_migration',
     ]).optional()
   ),
+  session_id: OptionalSessionId,
+});
+
+export const AbortMigrationInput = z.object({
+  reason: z.string().optional().default('Migration aborted by operator or agent decision'),
   session_id: OptionalSessionId,
 });
 
@@ -174,7 +179,7 @@ export interface CommandRegistration {
 export class CommandDispatcher {
   private commands = new Map<string, CommandRegistration>();
 
-  register<T>(toolName: string, schema: z.ZodType<T>, handler: CommandHandler<T, unknown>): void {
+  register<T extends z.ZodTypeAny>(toolName: string, schema: T, handler: CommandHandler<z.infer<T>, unknown>): void {
     this.commands.set(toolName, {
       schema,
       handler: handler as CommandHandler<unknown, unknown>,

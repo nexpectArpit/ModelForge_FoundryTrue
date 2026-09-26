@@ -21,14 +21,14 @@ describe('MCP Servers & Privilege Boundaries', () => {
   });
 
   it('inspects customer support app and finds model couplings', async () => {
-    const profile = await handleRehearsalToolCall('repo_inspect_ai_usage', {
+    const profile: any = await handleRehearsalToolCall('repo_inspect_ai_usage', {
       repo_path: APP_DIR,
     });
     expect(profile.status).toBe('complete');
     expect(profile.repository_name).toBe('customer-support-app');
     expect(profile.model_references.length).toBeGreaterThan(0);
 
-    const hasConfig = profile.model_references.some(r => r.file_path.includes('config.ts'));
+    const hasConfig = profile.model_references.some((r: any) => r.file_path.includes('config.ts'));
     expect(hasConfig).toBe(true);
   });
 
@@ -48,7 +48,7 @@ describe('MCP Servers & Privilege Boundaries', () => {
     machine.transition('evaluation_complete', 'test');
     machine.addEvaluation({
       contract_version: '2.0',
-      eval_run_id: 'eval-999',
+      eval_run_id: 'eval-999' as any,
       overall: 'PASS',
       quality: { score: 1.0, threshold: 0.90, passed: true, by_category: {} },
       latency: { p50_ms: 100, p95_ms: 320, p99_ms: 400, threshold_p95_ms: 600, passed: true },
@@ -157,7 +157,7 @@ describe('MCP Servers & Privilege Boundaries', () => {
     };
     machine.addEvaluation(candidateReport as any);
 
-    const comparison = await handleRehearsalToolCall('compare_rehearsals', {
+    const comparison: any = await handleRehearsalToolCall('compare_rehearsals', {
       session_id: machine.sessionId,
     });
 

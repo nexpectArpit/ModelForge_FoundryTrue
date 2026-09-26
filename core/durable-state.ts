@@ -32,6 +32,7 @@ import {
   type DurableAuditEvent,
   type RestartReconciliation,
   type ReconciliationStatus,
+  type RehearsalComparisonMatrix,
   createStepId,
 } from './types.js';
 
@@ -90,8 +91,10 @@ export class DurableStateStore {
         remediation_round INTEGER NOT NULL DEFAULT 0,
         max_remediation_rounds INTEGER NOT NULL DEFAULT 3,
         profile_json TEXT,
+        baseline_eval_id TEXT,
         plan_json TEXT,
         latest_eval_id TEXT,
+        latest_comparison_json TEXT,
         latest_diagnosis_json TEXT,
         canary_id TEXT,
         canary_json TEXT,
@@ -99,6 +102,14 @@ export class DurableStateStore {
         updated_at TEXT NOT NULL
       );
     `);
+
+    // Migration columns for existing SQLite databases
+    try {
+      this.db.exec(`ALTER TABLE migration_sessions ADD COLUMN baseline_eval_id TEXT;`);
+    } catch (_) {}
+    try {
+      this.db.exec(`ALTER TABLE migration_sessions ADD COLUMN latest_comparison_json TEXT;`);
+    } catch (_) {}
 
     // 2. State Transitions
     this.db.exec(`
@@ -278,8 +289,10 @@ export class DurableStateStore {
       remediation_round: Number(row.remediation_round),
       max_remediation_rounds: Number(row.max_remediation_rounds),
       profile_json: row.profile_json,
+      baseline_eval_id: row.baseline_eval_id,
       plan_json: row.plan_json,
       latest_eval_id: row.latest_eval_id,
+      latest_comparison_json: row.latest_comparison_json,
       latest_diagnosis_json: row.latest_diagnosis_json,
       canary_id: row.canary_id,
       canary_json: row.canary_json,
@@ -300,8 +313,10 @@ export class DurableStateStore {
       remediation_round: Number(row.remediation_round),
       max_remediation_rounds: Number(row.max_remediation_rounds),
       profile_json: row.profile_json,
+      baseline_eval_id: row.baseline_eval_id,
       plan_json: row.plan_json,
       latest_eval_id: row.latest_eval_id,
+      latest_comparison_json: row.latest_comparison_json,
       latest_diagnosis_json: row.latest_diagnosis_json,
       canary_id: row.canary_id,
       canary_json: row.canary_json,
@@ -652,6 +667,39 @@ export class DurableStateStore {
         },
       });
     });
+  }
+
+  saveBaselineEvaluation(sessionId: string, report: EvaluationReport): void {
+    this.transaction(() => {
+      this.recordEvaluation(sessionId, report);
+      const evalRunId = report.eval_run_id ?? `eval-${Date.now()}`;
+      const stmt = this.db.prepare(`
+        UPDATE migration_sessions
+        SET baseline_eval_id = ?, updated_at = ?
+        WHERE session_id = ?
+      `);
+      stmt.run(evalRunId, new Date().toISOString(), sessionId);
+    });
+  }
+
+  saveComparison(sessionId: string, comparison: RehearsalComparisonMatrix): void {
+    this.transaction(() => {
+      const stmt = this.db.prepare(`
+        UPDATE migration_sessions
+        SET latest_comparison_json = ?, updated_at = ?
+        WHERE session_id = ?
+      `);
+      stmt.run(JSON.stringify(comparison), new Date().toISOString(), sessionId);
+    });
+  }
+
+  getEvaluation(evalRunId: string): EvaluationReport | null {
+    const stmt = this.db.prepare(`
+      SELECT report_json FROM evaluation_runs WHERE eval_run_id = ?
+    `);
+    const row = stmt.get(evalRunId) as any;
+    if (!row || !row.report_json) return null;
+    return JSON.parse(row.report_json) as EvaluationReport;
   }
 
   getEvaluationRuns(sessionId: string): DurableEvaluationRecord[] {

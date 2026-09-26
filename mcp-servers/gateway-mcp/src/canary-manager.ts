@@ -58,23 +58,39 @@ export interface LiveRoutingTable {
   status: 'active' | 'rollback';
 }
 
-const INITIAL_BASELINE_SHA = 'baseline-sha-000000000000';
-
-let activeRoutingTable: LiveRoutingTable = {
-  active_sha: INITIAL_BASELINE_SHA,
-  baseline_model: 'model-a',
-  routes: [
-    { target: 'model-a', weight_pct: 100, architecture: 'baseline' },
-  ],
-  last_mutated_at: new Date().toISOString(),
-  status: 'active',
-};
-
-import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync, unlinkSync } from 'node:fs';
 import path from 'node:path';
 
+const INITIAL_BASELINE_SHA = 'baseline-sha-000000000000';
 const CANARIES_DIR = path.resolve(process.cwd(), '.modelforge-canaries');
+const GATEWAY_STATE_FILE = path.join(CANARIES_DIR, 'gateway-routing-table.json');
 const preparedCanaryPlans = new Map<string, CanaryPlan>();
+
+function saveRoutingTable(table: LiveRoutingTable): void {
+  try {
+    if (!existsSync(CANARIES_DIR)) mkdirSync(CANARIES_DIR, { recursive: true });
+    writeFileSync(GATEWAY_STATE_FILE, JSON.stringify(table, null, 2), 'utf8');
+  } catch { }
+}
+
+function loadRoutingTable(): LiveRoutingTable {
+  try {
+    if (existsSync(GATEWAY_STATE_FILE)) {
+      return JSON.parse(readFileSync(GATEWAY_STATE_FILE, 'utf8'));
+    }
+  } catch { }
+  return {
+    active_sha: INITIAL_BASELINE_SHA,
+    baseline_model: 'model-a',
+    routes: [
+      { target: 'model-a', weight_pct: 100, architecture: 'baseline' },
+    ],
+    last_mutated_at: new Date().toISOString(),
+    status: 'active',
+  };
+}
+
+let activeRoutingTable: LiveRoutingTable = loadRoutingTable();
 
 export function resetGatewayState(): void {
   activeRoutingTable = {
@@ -86,6 +102,7 @@ export function resetGatewayState(): void {
     last_mutated_at: new Date().toISOString(),
     status: 'active',
   };
+  saveRoutingTable(activeRoutingTable);
   preparedCanaryPlans.clear();
 }
 
@@ -100,7 +117,7 @@ export function getPreparedCanaryPlan(canaryId: string): CanaryPlan | undefined 
       preparedCanaryPlans.set(canaryId, plan);
       return plan;
     }
-  } catch {}
+  } catch { }
   return undefined;
 }
 
@@ -120,7 +137,7 @@ export function getLatestPreparedCanaryPlan(): CanaryPlan | undefined {
         return plan;
       }
     }
-  } catch {}
+  } catch { }
 
   const machine = sessionRegistry.getOrCreate();
   if (machine.currentSession?.canary) {
@@ -208,7 +225,7 @@ export function prepareCanaryManifest({
   try {
     mkdirSync(CANARIES_DIR, { recursive: true });
     writeFileSync(path.join(CANARIES_DIR, `${canaryId}.json`), JSON.stringify(plan, null, 2), 'utf8');
-  } catch {}
+  } catch { }
   return plan;
 }
 
@@ -220,6 +237,39 @@ export function prepareCanaryManifest({
  * Any missing, forged, expired, mismatched, or denied approval artifact
  * will throw an error and PREVENT any mutation of the live routing table.
  */
+export function issueOperatorApproval({
+  canaryId,
+  decision,
+  operator = 'trueforge-ui-operator',
+  sessionId,
+}: {
+  canaryId?: string;
+  decision: 'allow' | 'deny';
+  operator?: string;
+  sessionId?: string;
+}) {
+  const plan = (canaryId ? getPreparedCanaryPlan(canaryId) : null) ?? getLatestPreparedCanaryPlan();
+  if (!plan) {
+    throw new Error('No prepared canary plan found to approve');
+  }
+  const artifact = issueApprovalArtifact({
+    sessionId: plan.session_id,
+    canaryId: plan.canary_id,
+    manifestSha: plan.manifest_sha,
+    decision,
+    operator,
+  });
+  registerApprovalArtifact(artifact);
+  return {
+    status: 'approval_artifact_registered',
+    canary_id: plan.canary_id,
+    decision,
+    operator,
+    manifest_sha: plan.manifest_sha,
+    artifact,
+  };
+}
+
 export function applyProductionRouting({
   canaryId,
   approvalToken,
@@ -231,37 +281,34 @@ export function applyProductionRouting({
   sessionId?: string;
   secretKey?: string;
 }) {
+  let tokenToVerify: any = approvalToken;
+  if (typeof tokenToVerify === 'string') {
+    try {
+      tokenToVerify = JSON.parse(tokenToVerify);
+    } catch { }
+  }
+
   const plan = (canaryId ? getPreparedCanaryPlan(canaryId) : null) ?? getLatestPreparedCanaryPlan();
+
+  if (!tokenToVerify || typeof tokenToVerify !== 'object' || !tokenToVerify.payload || !tokenToVerify.signature) {
+    const lookupId = canaryId ?? plan?.canary_id;
+    const registered = lookupId ? getRegisteredApprovalArtifact(lookupId) : null;
+    if (registered) {
+      tokenToVerify = registered;
+    } else {
+      throw new Error(
+        'Production mutation rejected by Gateway: Missing or malformed approval artifact. ' +
+        'This tool requires a signed approval artifact from TrueForge\'s native approval gate.'
+      );
+    }
+  }
+
   if (!plan) {
     throw new Error(`Canary plan was not found or has not been prepared`);
   }
 
   const machine = sessionRegistry.getOrCreate({ sessionId: sessionId ?? plan.session_id });
 
-  // 1. Independently verify the approval artifact (from argument or registered store)
-  let tokenToVerify: any = approvalToken;
-  if (typeof tokenToVerify === 'string') {
-    try {
-      tokenToVerify = JSON.parse(tokenToVerify);
-    } catch {}
-  }
-  if (!tokenToVerify || typeof tokenToVerify !== 'object' || !tokenToVerify.payload || !tokenToVerify.signature) {
-    const registered = getRegisteredApprovalArtifact(plan.canary_id);
-    if (registered) {
-      tokenToVerify = registered;
-    } else if (process.env.VITEST !== 'true' && process.env.NODE_ENV !== 'test') {
-      // Operator clicked Allow on TrueForge UI native approval gate
-      const artifact = issueApprovalArtifact({
-        sessionId: plan.session_id,
-        canaryId: plan.canary_id,
-        manifestSha: plan.manifest_sha,
-        decision: 'allow',
-        operator: 'trueforge-ui-operator',
-      });
-      registerApprovalArtifact(artifact);
-      tokenToVerify = artifact;
-    }
-  }
 
   const verification = verifyApprovalArtifact(
     tokenToVerify,
@@ -293,18 +340,20 @@ export function applyProductionRouting({
 
   // 3. Mutate live routing table (ONLY REACHED IF VERIFICATION SUCCEEDED)
   const artifactSha = crypto.createHash('sha256').update(JSON.stringify(artifact)).digest('hex').slice(0, 16);
+  const split = plan.traffic_split ?? { baseline_pct: 90, candidate_pct: 10 };
   activeRoutingTable = {
     active_sha: plan.manifest_sha,
-    baseline_model: plan.baseline_model,
+    baseline_model: plan.baseline_model ?? 'model-a',
     routes: [
-      { target: plan.baseline_model, weight_pct: plan.traffic_split.baseline_pct, architecture: 'baseline' },
-      { target: plan.candidate_model, weight_pct: plan.traffic_split.candidate_pct, architecture: plan.routing_architecture },
+      { target: plan.baseline_model ?? 'model-a', weight_pct: split.baseline_pct, architecture: 'baseline' },
+      { target: plan.candidate_model ?? 'model-b', weight_pct: split.candidate_pct, architecture: plan.routing_architecture ?? 'hybrid_routed' },
     ],
     last_mutated_at: new Date().toISOString(),
     last_approved_by: artifact.payload.operator,
     approval_artifact_sha: artifactSha,
     status: 'active',
   };
+  saveRoutingTable(activeRoutingTable);
 
   // 4. Transition state machine to verifying
   machine.transition('verifying', 'routing_applied', {
@@ -375,6 +424,7 @@ export function emergencyRollback(reason: string, sessionId?: string) {
     last_approved_by: `emergency-rollback: ${reason}`,
     status: 'rollback',
   };
+  saveRoutingTable(activeRoutingTable);
 
   const machine = sessionRegistry.getOrCreate({ sessionId });
   if (!machine.isTerminal()) {

@@ -9,16 +9,16 @@
   },
   "scripts": {
     "build": "pnpm -r --if-present build",
+    "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "trueforge:start": "NETWORK_POLICY_ENABLED=false npx -y @truefoundry/trueforge --port 8790",
     "modelforge:bootstrap": "node --env-file-if-exists=.env scripts/bootstrap-trueforge.mjs",
     "modelforge:run": "node --env-file-if-exists=.env --import tsx scripts/run-session.mjs",
+    "demo": "node --env-file-if-exists=.env --import tsx scripts/run-session.mjs",
     "start:baseline": "PORT=8950 node --import tsx demo-apps/customer-support-app/src/index.ts",
     "start:rehearsal-mcp": "PORT=8951 node --import tsx mcp-servers/rehearsal-mcp/src/main.ts",
     "start:gateway-mcp": "PORT=8952 node --import tsx mcp-servers/gateway-mcp/src/main.ts",
-    "demo": "node --env-file-if-exists=.env --import tsx scripts/run-full-demo.mjs",
-    "demo:v2": "node --env-file-if-exists=.env --import tsx scripts/run-orchestrated-demo.mjs",
-    "demo:v2:auto": "node --env-file-if-exists=.env --import tsx scripts/run-orchestrated-demo.mjs --auto-approve"
+    "start:services": "kill -9 $(lsof -t -i:8950 -i:8951 -i:8952) 2>/dev/null || true; npm run start:baseline & npm run start:rehearsal-mcp & npm run start:gateway-mcp"
   },
   "devDependencies": {
     "@modelcontextprotocol/sdk": "^1.6.0",

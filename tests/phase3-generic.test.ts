@@ -33,7 +33,7 @@ import {
   type ModelCapabilityProfile,
 } from '../core/model-capabilities.js';
 
-import { analyzeRepository, type RepositoryComplexity } from '../core/repository-analyzer.js';
+import { analyzeRepository } from '../core/repository-analyzer.js';
 import { generateMigrationPlan } from '../core/migration-planner.js';
 import { diagnoseFailures } from '../core/failure-diagnostician.js';
 import { applyMigrationPlan } from '../core/patching-engine.js';

@@ -22,7 +22,7 @@ import { runEvaluation } from '../../../core/evaluation-engine.js';
 import { diagnoseFailures } from '../../../core/failure-diagnostician.js';
 import { generateMigrationPlan } from '../../../core/migration-planner.js';
 import { sessionRegistry } from '../../../core/session-registry.js';
-import { startSandboxApp, stopSandboxApp } from './sandbox-runner.js';
+import { startSandboxApp, stopSandboxApp, getCurrentAppPort, stageMigrationDiff } from './sandbox-runner.js';
 import {
   applyMigrationPlan,
   applyModelLiteralPatch,
@@ -48,6 +48,7 @@ import {
   EstablishBaselineInput,
   CompareRehearsalsInput,
   ApplyRemediationInput,
+  AbortMigrationInput,
 } from '../../../core/mcp-boundary.js';
 import { compareRehearsalReports } from '../../../core/rehearsal/index.js';
 
@@ -189,6 +190,17 @@ export const REHEARSAL_TOOLS = [
       type: 'object',
       properties: {
         strategy: { type: 'string', enum: ['hybrid_routing', 'prompt_adaptation', 'schema_simplification', 'temperature_tuning', 'few_shot_examples', 'abort_migration'], description: 'Remediation strategy to apply' },
+        session_id: { type: ['string', 'null'], description: 'Optional migration session identifier' },
+      },
+    },
+  },
+  {
+    name: 'abort_migration',
+    description: 'Explicitly and cleanly abort the migration rehearsal when target candidate is incompatible, unsafe, or unsupported.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        reason: { type: 'string', description: 'Detailed rationale for aborting the migration' },
         session_id: { type: ['string', 'null'], description: 'Optional migration session identifier' },
       },
     },
@@ -349,6 +361,14 @@ dispatcher.register('stage_code_migration', StageCodeInput, async (cmd) => {
     }
 
     // Verify sandbox mutation invariants
+    try {
+      await stageMigrationDiff({
+        targetDir: sandbox.sandboxPath,
+        activeModel: cmd.active_model,
+        routingMode: cmd.routing_mode ?? 'direct',
+      });
+    } catch {}
+
     const verification = verifySandboxPatches(sandbox);
     if (!verification.verified) {
       throw new SandboxVerificationError(verification.errors);
@@ -390,6 +410,7 @@ dispatcher.register('sandbox_run_app', SandboxRunInput, async (cmd) => {
 
   const port = cmd.port ?? 8955;
   const result = await startSandboxApp({
+    sessionId: machine.sessionId,
     targetDir: sandbox.sandboxPath,
     port,
   });
@@ -477,16 +498,17 @@ dispatcher.register('get_session_state', GetSessionStateInput, async (cmd) => {
 // 8. establish_baseline
 dispatcher.register('establish_baseline', EstablishBaselineInput, async (cmd) => {
   const machine = sessionRegistry.getOrCreate({ sessionId: cmd.session_id });
+  const baselineModel = cmd.baseline_model ?? machine.currentSession.source_model ?? 'baseline';
   const report = await runEvaluation({
     endpointUrl: cmd.endpoint_url,
-    candidateId: cmd.baseline_model,
+    candidateId: baselineModel,
     sessionId: machine.sessionId,
   });
   machine.setBaselineEvaluation(report);
   sessionRegistry.persist(machine);
   return {
     status: 'baseline_established',
-    baseline_model: cmd.baseline_model,
+    baseline_model: baselineModel,
     report,
   };
 });
@@ -498,11 +520,18 @@ dispatcher.register('compare_rehearsals', CompareRehearsalsInput, async (cmd) =>
   if (!candidateEval) {
     throw new NoPrecedingEvaluationError(machine.sessionId);
   }
-  const baselineEval = machine.session.baseline_evaluation ?? candidateEval;
+  const baselineEval = machine.currentSession.baseline_evaluation;
+  if (!baselineEval) {
+    throw new Error(
+      `Cannot compare: no baseline evaluation exists for session "${machine.sessionId}". ` +
+      'Run establish_baseline first to record ground truth before comparing.'
+    );
+  }
+
   const comparison = compareRehearsalReports({
     baselineReport: baselineEval,
     candidateReport: candidateEval,
-    baselineModel: machine.session.source_model,
+    baselineModel: machine.currentSession.source_model,
     candidateModel: candidateEval.candidate_id,
     sessionId: machine.sessionId,
   });
@@ -519,23 +548,88 @@ dispatcher.register('apply_sandbox_remediation', ApplyRemediationInput, async (c
   if (!sandbox || sandbox.getManifest().status !== 'active') {
     throw new SandboxNotInitializedError(machine.sessionId);
   }
-  const strategy = cmd.strategy ?? machine.session.diagnoses[machine.session.diagnoses.length - 1]?.recommended_strategy ?? 'hybrid_routing';
+  const strategy: string = cmd.strategy ?? machine.currentSession.diagnoses[machine.currentSession.diagnoses.length - 1]?.recommended_strategy ?? 'hybrid_routing';
   if (strategy === 'abort_migration') {
     machine.transition('aborted', 'abort_migration_diagnosed');
     sessionRegistry.persist(machine);
     return { status: 'aborted', strategy: 'abort_migration', message: 'Migration aborted due to unsupported capability.' };
   }
-  const routingRes = applyRoutingModePatch(
-    sandbox,
-    strategy === 'hybrid_routing' ? 'hybrid' : 'direct',
+
+  if (strategy === 'hybrid_routing') {
+    const routingRes = applyRoutingModePatch(sandbox, 'hybrid');
+    try {
+      await stageMigrationDiff({
+        targetDir: sandbox.sandboxPath,
+        activeModel: 'model-b',
+        routingMode: 'hybrid',
+      });
+    } catch {}
+
+    try {
+      const port = getCurrentAppPort() || 8955;
+      await startSandboxApp({
+        sessionId: machine.sessionId,
+        targetDir: sandbox.sandboxPath,
+        port,
+      });
+    } catch {}
+
+    machine.transition('remediation_staged', 'remediation_applied', { strategy });
+    sessionRegistry.persist(machine);
+    return {
+      status: 'remediation_staged',
+      strategy,
+      routing_patches: routingRes,
+      modified_files: sandbox.getManifest().modified_files,
+    };
+  }
+
+  if (strategy === 'direct' || strategy === 'direct_routing' || strategy === 'model_substitution') {
+    const routingRes = applyRoutingModePatch(sandbox, 'direct');
+    try {
+      await stageMigrationDiff({
+        targetDir: sandbox.sandboxPath,
+        activeModel: 'model-b',
+        routingMode: 'direct',
+      });
+    } catch {}
+
+    try {
+      const port = getCurrentAppPort() || 8955;
+      await startSandboxApp({
+        sessionId: machine.sessionId,
+        targetDir: sandbox.sandboxPath,
+        port,
+      });
+    } catch {}
+
+    machine.transition('remediation_staged', 'remediation_applied', { strategy });
+    sessionRegistry.persist(machine);
+    return {
+      status: 'remediation_staged',
+      strategy,
+      routing_patches: routingRes,
+      modified_files: sandbox.getManifest().modified_files,
+    };
+  }
+
+  // Reject unsupported strategies with honest diagnosis feedback
+  throw new Error(
+    `Remediation strategy "${strategy}" cannot be automatically synthesized in sandbox without manual code rewrite or adapter. ` +
+    `Supported automated strategies: "hybrid_routing", "direct", "abort_migration".`
   );
-  machine.transition('remediation_staged', 'remediation_applied', { strategy });
+});
+
+// 11. abort_migration
+dispatcher.register('abort_migration', AbortMigrationInput, async (cmd) => {
+  const machine = sessionRegistry.getOrCreate({ sessionId: cmd.session_id });
+  const reason = cmd.reason ?? 'Migration aborted cleanly by agent decision.';
+  machine.transition('aborted', 'abort_migration_requested', { reason });
   sessionRegistry.persist(machine);
   return {
-    status: 'remediation_staged',
-    strategy,
-    routing_patches: routingRes,
-    modified_files: sandbox.getManifest().modified_files,
+    status: 'aborted',
+    session_id: machine.sessionId,
+    reason,
   };
 });
 

@@ -63,17 +63,13 @@ export class SessionRegistry {
     }
 
     if (targetId && !opts?.forceNew) {
-      const isTerminal = (state: string) => ['completed', 'failed', 'aborted'].includes(state);
-
       // 1. Check if session exists in SQLite
       const durableRecord = this.store.getSession(targetId);
-      if (durableRecord && (cleaned || !isTerminal(durableRecord.state))) {
+      if (durableRecord) {
         if (this.inMemory.has(targetId)) {
           const machine = this.inMemory.get(targetId)!;
-          if (cleaned || !isTerminal(machine.state)) {
-            this.activeSessionId = machine.sessionId;
-            return machine;
-          }
+          this.activeSessionId = machine.sessionId;
+          return machine;
         } else {
           // Rehydrate machine directly from SQLite
           const machine = MigrationStateMachine.fromStore(this.store, targetId as SessionId);

@@ -274,11 +274,11 @@ describe('Principle #12 & #13: Strategy Registry / Open-Closed Extensibility', (
     });
 
     const diagnosis = diagnoseFailures({
-      sessionId: 'test-session',
+      sessionId: 'test-session' as any,
       evaluationReport: {
         contract_version: '2.0',
-        eval_run_id: 'eval-test',
-        session_id: 'test-session',
+        eval_run_id: 'eval-test' as any,
+        session_id: 'test-session' as any,
         candidate_id: 'test',
         timestamp: new Date().toISOString(),
         test_suite_id: 'test',
@@ -440,7 +440,7 @@ describe('Principle #6: Fail-Closed Behavior', () => {
   it('sandbox rejects operations on non-existent source path with typed error', () => {
     expect(() => {
       new WorkspaceSandbox({
-        sessionId: 'test',
+        sessionId: 'test' as any,
         sourcePath: '/nonexistent/path/that/does/not/exist',
       });
     }).toThrow(SourcePathNotFoundError);
@@ -471,7 +471,7 @@ describe('Principle #4: Explicit State Machines (regression)', () => {
 
     for (const state of allStates) {
       expect(VALID_TRANSITIONS).toHaveProperty(state);
-      expect(Array.isArray(VALID_TRANSITIONS[state])).toBe(true);
+      expect(Array.isArray((VALID_TRANSITIONS as any)[state])).toBe(true);
     }
   });
 
@@ -551,7 +551,6 @@ describe('Principle #5: Deterministic Core / Nondeterministic Edge', () => {
     };
 
     const passResult = evaluateBenchmarkCaseAssertion(qaCase as any, {
-      case_id: 'qa-1',
       ok: true,
       status: 200,
       response_text: 'You can request a refund within 30 days of purchase.',
@@ -561,7 +560,6 @@ describe('Principle #5: Deterministic Core / Nondeterministic Edge', () => {
     expect(passResult.failureReason).toBe('');
 
     const failResult = evaluateBenchmarkCaseAssertion(qaCase as any, {
-      case_id: 'qa-1',
       ok: true,
       status: 200,
       response_text: 'Our offices are located in Chicago.',
@@ -625,13 +623,13 @@ describe('Principle #8: Idempotent Operations', () => {
     };
 
     // First execution: replaces
-    const res1 = executePatchOperation(mockSandbox, patchOp);
+    const res1 = executePatchOperation(mockSandbox, patchOp as any);
     expect(res1.applied).toBe(true);
     expect(res1.replacements).toBe(1);
     expect(fileContent).toBe('const model = "gpt-4o-mini";');
 
     // Second execution: idempotent, recognizes already applied
-    const res2 = executePatchOperation(mockSandbox, patchOp);
+    const res2 = executePatchOperation(mockSandbox, patchOp as any);
     expect(res2.applied).toBe(true);
     expect(res2.replacements).toBe(0);
     expect(res2.description).toContain('already applied');
@@ -658,11 +656,11 @@ describe('Principle #8: Idempotent Operations', () => {
       description: 'Append routing mode',
     };
 
-    const res1 = executePatchOperation(mockSandbox, appendOp);
+    const res1 = executePatchOperation(mockSandbox, appendOp as any);
     expect(res1.applied).toBe(true);
     expect(fileContent).toContain('ROUTING_MODE=hybrid');
 
-    const res2 = executePatchOperation(mockSandbox, appendOp);
+    const res2 = executePatchOperation(mockSandbox, appendOp as any);
     expect(res2.applied).toBe(true);
     expect(res2.description).toContain('already appended');
     // Ensure it wasn't appended twice
@@ -717,7 +715,8 @@ describe('Principle #1: Separation of Concerns (Rehearsal Dispatcher)', () => {
     expect(tools).toContain('establish_baseline');
     expect(tools).toContain('compare_rehearsals');
     expect(tools).toContain('apply_sandbox_remediation');
-    expect(tools.length).toBe(10);
+    expect(tools).toContain('abort_migration');
+    expect(tools.length).toBe(11);
   });
 });
 

@@ -81,7 +81,7 @@ describe('Sandbox Strict Isolation', () => {
     });
 
     // 3. Stage candidate model in sandbox
-    const stagedResult = await handleRehearsalToolCall('stage_code_migration', {
+    const stagedResult: any = await handleRehearsalToolCall('stage_code_migration', {
       repo_path: DEMO_APP,
       active_model: 'model-b',
     });
@@ -97,14 +97,14 @@ describe('Sandbox Strict Isolation', () => {
 
     // 4. Start the application inside the sandbox
     const testPort = 8968;
-    const appResult = await handleRehearsalToolCall('sandbox_run_app', {
+    const appResult: any = await handleRehearsalToolCall('sandbox_run_app', {
       port: testPort,
     });
     expect(appResult.status).toBe('healthy');
     expect(appResult.sandbox_path).toBe(stagedResult.sandbox_path);
 
     // 5. Run deterministic evaluation against the sandboxed app
-    const evalReport = await handleRehearsalToolCall('run_deterministic_benchmark', {
+    const evalReport: any = await handleRehearsalToolCall('run_deterministic_benchmark', {
       endpoint_url: `http://127.0.0.1:${testPort}/api/chat`,
       candidate_id: 'isolation-test-candidate',
     });
